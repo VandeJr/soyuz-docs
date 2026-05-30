@@ -144,30 +144,48 @@ fn errado(self) {
 
 ## Métodos
 
-Todos os métodos recebem `self` explicitamente como primeiro parâmetro:
+Todos os métodos recebem `self` explicitamente como primeiro parâmetro.
+
+### Visibilidade de métodos
+
+Por padrão, métodos são **privados** ao módulo — só podem ser chamados por código no mesmo arquivo. Use `pub` para torná-los acessíveis de fora da classe:
 
 ```soyuz
 class Retangulo {
     val largura: Float
     val altura: Float
 
-    fn area(self) -> Float {
+    pub fn area(self) -> Float {          // acessível de fora
         return self.largura * self.altura
     }
 
-    fn perimetro(self) -> Float {
+    pub fn perimetro(self) -> Float {     // acessível de fora
         return 2.0 * (self.largura + self.altura)
     }
 
-    fn escalar(self, fator: Float) -> Retangulo {
-        // Retorna um novo Retangulo — não muta o original
+    pub fn escalar(self, fator: Float) -> Retangulo {  // acessível de fora
         return Retangulo {
             largura: self.largura * fator,
             altura: self.altura * fator
         }
     }
+
+    fn calcularDiagonal(self) -> Float {  // privado — helper interno
+        return self.largura * self.largura + self.altura * self.altura
+    }
 }
 ```
+
+<Aside type="caution">
+Chamar um método sem `pub` de fora da classe resulta em erro de compilação:
+
+```soyuz
+val r = Retangulo { largura: 4.0, altura: 3.0 }
+r.calcularDiagonal()  // ERRO — método 'calcularDiagonal' de 'Retangulo' é privado
+```
+
+Adicione `pub` ao método para permitir acesso externo.
+</Aside>
 
 ### Overloading de métodos
 
