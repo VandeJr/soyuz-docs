@@ -9,9 +9,13 @@ export default defineConfig({
       description:
         "Documentação oficial da linguagem de programação Soyuz (.sy)",
       defaultLocale: "pt-br",
-      social: {
-        github: "https://github.com/VandeJr/soyuz-docs",
-      },
+      social: [
+        {
+          icon: "github",
+          label: "GitHub",
+          href: "https://github.com/VandeJr/soyuz-docs",
+        },
+      ],
       sidebar: [
         {
           label: "Começando",
