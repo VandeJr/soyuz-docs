@@ -1,0 +1,247 @@
+---
+title: Controle de Fluxo
+description: if, for, while, loop, break e continue em Soyuz.
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## if / else
+
+```soyuz
+if condicao {
+    // ...
+}
+
+if condicao {
+    // ...
+} else {
+    // ...
+}
+
+if condicao {
+    // ...
+} else if outraCondicao {
+    // ...
+} else {
+    // ...
+}
+```
+
+Parênteses ao redor da condição **não são necessários**:
+
+```soyuz
+if x > 0 { print("positivo") }       // OK
+if (x > 0) { print("positivo") }     // também OK, mas desnecessário
+```
+
+<Aside type="note">
+Para lógica baseada em estrutura de dados, prefira `match` ao invés de cadeias de `if/else`. `match` é exaustivo e mais expressivo.
+</Aside>
+
+---
+
+## for — iteração
+
+Itera sobre qualquer valor iterável (listas, ranges, etc.):
+
+```soyuz
+val nomes = ["Alice", "Bob", "Carol"]
+
+for nome in nomes {
+    print("Olá, $(nome)!")
+}
+```
+
+### Ranges
+
+Você pode criar intervalos (ranges) usando os operadores literais:
+
+```soyuz
+// Exclusivo: 0, 1, 2, ..., 9
+for i in 0..10 {
+    print(i)
+}
+
+// Inclusivo: 0, 1, 2, ..., 10
+for i in 0..=10 {
+    print(i)
+}
+```
+
+Os ranges também podem ser usados com variáveis:
+
+```soyuz
+val inicio = 1
+val fim = 5
+for i in inicio..=fim {
+    print(i) // 1, 2, 3, 4, 5
+}
+```
+
+### Com índice
+
+```soyuz
+for (i, item) in lista.enumerate() {
+    print("$(i): $(item)")
+}
+```
+
+---
+
+## while — loop condicional
+
+Executa enquanto a condição for verdadeira:
+
+```soyuz
+var tentativas = 0
+
+while tentativas < 3 {
+    val resultado = tentar()
+    if resultado.ok {
+        break
+    }
+    tentativas = tentativas + 1
+}
+```
+
+---
+
+## loop — loop infinito
+
+`loop` cria um loop que só termina com `break`:
+
+```soyuz
+loop {
+    val entrada = lerEntrada()
+    if entrada == "sair" {
+        break
+    }
+    processar(entrada)
+}
+```
+
+### loop retorna um valor
+
+`break` pode retornar um valor, tornando `loop` uma expressão:
+
+```soyuz
+val resultado = loop {
+    val tentativa = tentarConexao()
+    if tentativa.conectado {
+        break tentativa.conexao   // o valor de break se torna o valor do loop
+    }
+}
+
+// resultado é do tipo Conexao
+print("Conectado: $(resultado.host)")
+```
+
+Isso é especialmente útil com `Result`:
+
+```soyuz
+val conexao: Result[Conexao] = loop {
+    val r = tentarConexao()
+    match r {
+        Ok(c)  => break Ok(c)
+        Err(e) if tentativas < 3 => {
+            tentativas = tentativas + 1
+            aguardar(1000)
+        }
+        Err(e) => break Err(e)
+    }
+}
+```
+
+---
+
+## break e continue
+
+`break` encerra o loop mais interno. `continue` pula para a próxima iteração:
+
+```soyuz
+for i in 0..10 {
+    if i == 3 { continue }   // pula o 3
+    if i == 7 { break }      // para no 7
+    print(i)
+}
+// imprime: 0, 1, 2, 4, 5, 6
+```
+
+---
+
+## Comparação: quando usar cada um
+
+| Situação | Construção |
+|---|---|
+| Iterar sobre coleção/range | `for x in ...` |
+| Repetir enquanto condição | `while` |
+| Repetir até encontrar algo (com valor) | `loop { break valor }` |
+| Repetir infinitamente até sinal externo | `loop { break }` |
+| Desviar baseado na estrutura de um valor | `match` |
+| Desvio simples com condição booleana | `if/else` |
+
+---
+
+## Exemplos práticos
+
+### Soma acumulada
+
+```soyuz
+fn somarLista(nums: List[Int]) -> Int {
+    var total = 0
+    for n in nums {
+        total = total + n
+    }
+    return total
+}
+```
+
+### Busca com retorno antecipado
+
+```soyuz
+fn primeiroPositivo(nums: List[Int]) -> Option[Int] {
+    for n in nums {
+        if n > 0 { return Some(n) }
+    }
+    return None
+}
+```
+
+### Retry com loop
+
+```soyuz
+fn comRetry(tentativas: Int, operacao: () -> Result[Unit]) -> Result[Unit] {
+    var n = 0
+    return loop {
+        val r = operacao()
+        match r {
+            Ok(_)  => break Ok(())
+            Err(e) if n < tentativas => {
+                n = n + 1
+            }
+            Err(e) => break Err(e)
+        }
+    }
+}
+```
+
+### FizzBuzz
+
+```soyuz
+fn fizzBuzz(n: Int) -> String {
+    return match (n % 3, n % 5) {
+        (0, 0) => "FizzBuzz"
+        (0, _) => "Fizz"
+        (_, 0) => "Buzz"
+        _      => "$(n)"
+    }
+}
+
+fn main() {
+    for i in 1..=100 {
+        print(fizzBuzz(i))
+    }
+}
+```

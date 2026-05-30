@@ -1,0 +1,298 @@
+---
+title: Tipos
+description: Sistema de tipos do Soyuz — primitivos, records, enums, tuplas, Option e Result.
+sidebar:
+  order: 3
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Soyuz tem um sistema de tipos estático com inferência. O compilador conhece o tipo de cada expressão em tempo de compilação, mas você raramente precisa anotar tudo.
+
+---
+
+## Tipos primitivos
+
+| Tipo | Descrição | Exemplos |
+|---|---|---|
+| `Int` | Inteiro 64-bit | `0`, `42`, `-7` |
+| `Float` | Ponto flutuante 64-bit | `3.14`, `-0.5`, `1.0` |
+| `Bool` | Booleano | `true`, `false` |
+| `String` | Texto UTF-8 | `"olá"`, `"mundo"` |
+| `Char` | Caractere Unicode | `'a'`, `'ç'` |
+| `Unit` | Ausência de valor | `()` |
+
+```soyuz
+val inteiro: Int = 42
+val decimal: Float = 3.14
+val ativo: Bool = true
+val texto: String = "Soyuz"
+val vazio: Unit = ()
+```
+
+---
+
+## Strings
+
+Strings são delimitadas por aspas duplas e suportam **interpolação** com `$()`:
+
+```soyuz
+val nome = "Vand"
+val saudacao = "Olá, $(nome)!"            // "Olá, Vand!"
+val calculo = "Resultado: $(1 + 2 * 3)"   // "Resultado: 7"
+```
+
+Raw strings (sem processamento de escape) usam o prefixo `r`:
+
+```soyuz
+val regex = r"\d+\.\d+"
+val caminho = r"C:\Users\vand\docs"
+```
+
+---
+
+## Tuplas
+
+Tuplas agrupam valores de tipos diferentes. São imutáveis e têm tamanho fixo.
+
+```soyuz
+val par: (Int, String) = (1, "um")
+val trio = (true, 3.14, "pi")
+
+// Desestruturação
+val (n, s) = par
+val (flag, valor, label) = trio
+```
+
+`Unit` é essencialmente uma tupla vazia `()`.
+
+---
+
+## Records
+
+Records são estruturas de dados **imutáveis** e sem comportamento. São o tipo ideal para DTOs, valores de domínio e dados puros.
+
+```soyuz
+record Ponto {
+    x: Float
+    y: Float
+}
+
+record Usuario {
+    id: Int
+    nome: String
+    email: String
+}
+```
+
+### Criando records
+
+```soyuz
+val p = Ponto { x: 1.0, y: 2.0 }
+val u = Usuario { id: 1, nome: "Vand", email: "vand@soyuz.dev" }
+```
+
+### Acessando campos
+
+```soyuz
+val distX = p.x   // 1.0
+val nome = u.nome  // "Vand"
+```
+
+### Igualdade
+
+Records têm **deep equality** automática. Dois records são iguais se todos os seus campos são iguais:
+
+```soyuz
+val p1 = Ponto { x: 1.0, y: 2.0 }
+val p2 = Ponto { x: 1.0, y: 2.0 }
+
+p1 == p2   // true — compara por valor
+```
+
+<Aside type="note">
+Records **não** podem ter métodos, não podem implementar interfaces e não podem ser mutados. Se você precisa de comportamento, use `class`. Se precisa de mutabilidade, use `class` com `var`.
+</Aside>
+
+### Records genéricos
+
+```soyuz
+record Par[A, B] {
+    primeiro: A
+    segundo: B
+}
+
+val coords = Par[Int, Int] { primeiro: 10, segundo: 20 }
+```
+
+---
+
+## Enums (Sum types / ADTs)
+
+Enums representam um valor que pode ser **uma de várias variantes**. Cada variante pode carregar dados.
+
+```soyuz
+enum Forma {
+    Circulo(raio: Float)
+    Retangulo(w: Float, h: Float)
+    Ponto
+}
+
+enum Direcao {
+    Norte
+    Sul
+    Leste
+    Oeste
+}
+```
+
+### Criando valores de enum
+
+```soyuz
+val c = Forma.Circulo(raio: 5.0)
+val r = Forma.Retangulo(w: 10.0, h: 4.0)
+val d = Direcao.Norte
+```
+
+### Usando enums com match
+
+```soyuz
+fn area(f: Forma) -> Float {
+    return match f {
+        Circulo(raio)     => 3.14159 * raio * raio
+        Retangulo(w, h)   => w * h
+        Ponto             => 0.0
+    }
+}
+```
+
+### Enums genéricos
+
+```soyuz
+enum Arvore[T] {
+    Folha
+    No(valor: T, esq: Arvore[T], dir: Arvore[T])
+}
+```
+
+---
+
+## Option[T] — presença opcional
+
+`Option[T]` representa um valor que pode ou não existir. Tem duas variantes:
+
+- `Some(T)` — tem um valor
+- `None` — não tem valor
+
+```soyuz
+fn buscarPorId(id: Int) -> Option[Usuario] {
+    // retorna Some(usuario) ou None
+}
+
+val resultado = buscarPorId(42)
+
+val nome = match resultado {
+    Some(u) => u.nome
+    None    => "Usuário não encontrado"
+}
+```
+
+### Açúcar sintático com `?`
+
+O tipo `T?` é equivalente a `Option[T]`:
+
+```soyuz
+fn buscar(id: Int) -> Usuario?   // mesmo que Option[Usuario]
+
+val nome: String? = None
+```
+
+### Optional chaining com `?.`
+
+```soyuz
+val email = buscar(1)?.email   // String? — None se buscar retornar None
+```
+
+### Elvis operator `?:`
+
+```soyuz
+val display = buscar(1)?.nome ?: "Anônimo"
+```
+
+<Aside type="tip">
+Use `Option[T]` quando a ausência é parte normal do domínio — `findById` pode não encontrar nada, e isso não é um erro. Use `Result[T]` quando a ausência é uma falha — uma operação que deveria funcionar mas não funcionou.
+</Aside>
+
+---
+
+## Result[T] — operações que podem falhar
+
+`Result[T]` representa o resultado de uma operação que pode falhar. Tem duas variantes:
+
+- `Ok(T)` — sucesso com valor
+- `Err(E: Error)` — falha com erro
+
+O tipo do erro é sempre algo que implementa a interface `Error` (da biblioteca padrão).
+
+```soyuz
+fn dividir(a: Int, b: Int) -> Result[Float] {
+    if b == 0 {
+        return Err(DivisaoErro { motivo: "divisão por zero" })
+    }
+    return Ok(a.toFloat() / b.toFloat())
+}
+```
+
+### Tratando Result
+
+```soyuz
+val resultado = dividir(10, 2)
+```
+
+Assim como em `Option`, o `Result` suporta auto-wrapping: `Ok(v)` pode ser apenas `v` e `Err(e)` pode ser apenas `e` (se `e` for um `Error`).
+
+```soyuz
+match resultado {
+    Ok(v)  => print("Resultado: $(v)")
+    Err(e) => print("Erro: $(e.message())")
+}
+```
+
+### Encadeando com PipeQuest
+
+O operador `|?>` curto-circuita automaticamente quando uma etapa retorna `Err` ou `None`:
+
+```soyuz
+val dados: Result[Dados] = buscar(1) |?> validar |?> transformar
+// Se qualquer etapa retornar Err ou None, o pipeline para e propaga o erro.
+```
+
+---
+
+## Tipos genéricos
+
+Qualquer tipo pode ser parametrizado com `[]`:
+
+```soyuz
+List[Int]
+Map[String, Float]
+Option[Usuario]
+Result[Dados]
+Par[Int, String]
+```
+
+---
+
+## Resumo da hierarquia de tipos
+
+```
+Primitivos    Int, Float, Bool, String, Char, Unit
+Compostos     record (imutável, dados puros)
+              class  (dados + comportamento)
+              enum   (sum types / ADTs)
+Coleções      List[T], Map[K, V]
+Especiais     Option[T] / T?  (presença opcional)
+              Result[T]       (falha com motivo)
+Estruturais   (A, B, C)       (tupla)
+              (A, B) -> C     (tipo de função)
+```

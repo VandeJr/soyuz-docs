@@ -1,0 +1,88 @@
+---
+title: Type Checker
+description: Sistema de Tipos, Validação e Inferência
+sidebar:
+  order: 5
+---
+
+O módulo `checker` realiza a verificação e inferência estática de tipos sobre a AST produzida pelo parser. Seu objetivo é garantir que as operações e métodos evocados sobre os dados sejam válidos segundo as regras da linguagem Soyuz, rejeitando problemas (como acesso a métodos inexistentes ou incompatibilidade de operandos) antes de iniciar a geração de código.
+
+## Visão Geral do Módulo
+A arquitetura do type checker atua através da travessia em múltiplas fases (multi-pass):
+1. **Coleta Global:** Primeiro passo para registrar os nós `TopLevel` em escopos globais e em módulos, permitindo referências circulares ou ordens arbitrárias de declaração dentro de um mesmo arquivo.
+2. **Resolução:** Avalia as assinaturas (parâmetros, retornos e genéricos).
+3. **Verificação de Corpos (Checking):** Mergulha em blocos e expressões para inferir os tipos e garantir corretude.
+
+Seu design é resiliente. Sempre que um erro é encontrado, um tipo especial `ErrorType` ou `Any` (implícito no internal representation) pode ser propagado para evitar cascatas de alertas errôneos. Isso é feito preenchendo as structs `TypeError` e `TypeWarning` encapsuladas no final no `CheckResult`.
+
+### Como Implementar o Checker em Soyuz
+No self-hosting, a base do Checker é a `Tabela de Símbolos` (`Scope`) acoplada com uma hierarquia de tipos unificada. Pode-se estruturar a checagem instanciando visitantes (`Visitor` pattern) para cada braço de declaração ou via pattern matching recursivo na estrutura da AST.
+
+```soyuz
+// Exemplo conceitual da Interface de Tipo em Soyuz
+pub interface Type {
+    pub fn name(self) -> String
+    pub fn isAssignable(self, other: Type) -> Bool
+}
+
+pub class Checker {
+    var globalScope: Scope
+    var errors: List[TypeError]
+
+    pub fn check(self, ast: Program) -> Result[CheckResult] {
+        // Multi-pass inference
+    }
+}
+```
+
+---
+
+## Arquivos do Módulo
+
+### `types.go`
+**O que faz:** Define a fundação do sistema de tipos interno. Expõe a interface base `Type` e implementações concretas como `BasicType` (Int, String), `FuncType`, `RecordType`, `EnumType`, `ClassType`, `InterfaceType` e `TupleType`. Também lida com `TypeParameter` para generics e define as tabelas `Scope` e `Symbol`.
+**Onde é chamado:** Utilizado como o vocabulário primário em toda a validação semântica e também consultado pelo LSP e Codegen.
+**Principais Assinaturas:**
+- `type BasicType struct`
+- `type FuncType struct`
+- `type RecordType struct`
+- `type EnumType struct`
+- `type Scope struct`
+- `type Symbol struct`
+
+### `checker.go`
+**O que faz:** Define o núcleo e a orquestração do type checker (`Checker`), mantendo as referências para stdlib, tabelas hash em escopo de execução, e orquestrando as fases principais (`Check`).
+**Onde é chamado:** Invocado pelo `cmd/main.go` após a análise sintática ser efetuada com sucesso.
+**Como é usado:** O checker chama os pre-validators, resolve os modulos com base no `ImportDecl`, e então processa os nós injetando `Type` respectivo.
+**Principais Assinaturas:**
+- `func New() *Checker`
+- `func (c *Checker) Check(prog *parser.Program) *CheckResult`
+- `func (c *Checker) registerGlobalSymbol(name string, node parser.Node, pub bool)`
+- `func (c *Checker) isTaskType(t Type) bool`
+
+### `check_decls.go`
+**O que faz:** Focado puramente na validação das declarações top-level (`record`, `class`, `enum`, `fn`, `extend`). Resolve especializações de métodos, avalia sobrecargas (`registerFuncVariants` para pattern-matched funções), e certifica de que uma `Class` implementa corretamente a `Interface`.
+**Onde é chamado:** Diretamente de loops da fase inicial do checker.
+**Principais Assinaturas:**
+- `func (c *Checker) checkFuncDecl(n *parser.FuncDecl) Type`
+- `func (c *Checker) checkClassDecl(n *parser.ClassDecl) Type`
+- `func (c *Checker) registerFuncVariants(name string, variants []*parser.FuncDecl)`
+- `func (c *Checker) checkExtendDecl(n *parser.ExtendDecl) Type`
+
+### `check_exprs.go`
+**O que faz:** Realiza a tarefa massiva de inferir tipos de variáveis locais por fluxo de expressão em uma AST. Coerce (molda) os dados automagicamente onde açúcar sintático atua (e.g. embrulhar valores em `Option` ou `Result`), e valida conversões de binários e chamadas (`checkCallExpr`, `checkBinaryExpr`).
+**Onde é chamado:** Durante a resolução dos corpos das funções ou laços iterativos (`while`, `for`, `match`).
+**Principais Assinaturas:**
+- `func (c *Checker) checkCallExpr(n *parser.CallExpr) Type`
+- `func (c *Checker) checkBinaryExpr(n *parser.BinaryExpr) Type`
+- `func (c *Checker) checkTaskExpr(n *parser.TaskExpr) Type`
+- `func (c *Checker) checkPipeExpr(n *parser.PipeExpr) Type`
+- `func (c *Checker) checkMatchExpr(n *parser.MatchExpr) Type`
+
+### `check_generics.go`
+**O que faz:** Onde a mágica de monomorfização conceitual e unificação de tipo de genéricos acontece. Identifica tipos base, vincula instâncias (ex: `List[T]` onde `T=Int`), substituindo as árvores semânticas com `SpecializedType`.
+**Onde é chamado:** Nas checagens de literais tipados, métodos genéricos ou instanciamentos de structs.
+
+### `check_patterns.go`
+**O que faz:** Analisa exaustividade e validade dos padrões em destructuring `val (a, b) = ...` e nas ramificações lógicas dos cases do `match`. Cria amarrações (`bindings`) injetando novas variáveis locais no escopo do braço.
+**Onde é chamado:** Dentro de `checkMatchExhaustiveness` e nas análises de `ForIn` ou assinalamentos com desconstrução.

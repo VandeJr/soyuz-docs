@@ -1,0 +1,164 @@
+---
+title: Módulos e Imports
+description: Sistema de módulos de Soyuz — arquivo como módulo, pasta como package, imports e visibilidade.
+sidebar:
+  order: 10
+---
+
+import { FileTree, Aside } from '@astrojs/starlight/components';
+
+## Estrutura básica
+
+Em Soyuz:
+
+- **Um arquivo = um módulo**
+- **Uma pasta = um package**
+
+Não há declaração de `package` no topo do arquivo — o caminho da pasta é o package.
+
+<FileTree>
+- src/
+  - main.sy
+  - usuario/
+    - model.sy
+    - service.sy
+</FileTree>
+
+---
+
+## Visibilidade
+
+Por padrão, tudo é **privado** ao módulo. Use `pub` para exportar:
+
+```soyuz
+// usuario/model.sy
+
+pub record Usuario {       // exportado
+    id: Int
+    nome: String
+}
+
+record SenhaInterna {   // privado — só usado internamente neste arquivo
+    hash: String
+}
+
+pub fn criarUsuario(nome: String) -> Usuario {
+    return Usuario { id: 0, nome: nome }
+}
+```
+
+---
+
+## Importando
+
+Em Soyuz, imports são agrupados em blocos `import (...)`. Você pode importar de pacotes da biblioteca padrão (`@soyuz/`) ou de caminhos relativos à raiz do seu projeto (`@/`).
+
+### Import de Standard Library
+
+```soyuz
+import (
+    { range, readFile, getenv, Error } from @soyuz/prelude
+    { List, Map } from @soyuz/collections
+)
+```
+
+O `@soyuz/prelude` é **auto-importado** em todo arquivo Soyuz.
+
+### Import do Projeto (`@/`)
+
+O prefixo `@/` refere-se à raiz do seu projeto (onde está o `soyuz.toml`):
+
+```soyuz
+import (
+    { Usuario, criarUsuario } from @/usuario/model
+)
+```
+
+---
+
+## Caminho dos imports
+
+O caminho é sempre absoluto a partir da raiz do projeto (`@/`) ou da stdlib (`@soyuz/`).
+
+```soyuz
+import (
+    { Usuario } from @/usuario/model
+    { AppError } from @/shared/erros
+)
+```
+
+<Aside type="note">
+Não há imports relativos com `./` ou `../`. Todos os imports utilizam `@/` ou `@soyuz/`.
+</Aside>
+
+---
+
+## Imports circulares
+
+Imports circulares **não são permitidos**. Se `A` importa `B` e `B` importa `A`, o compilador emite um erro.
+
+A solução é extrair os tipos compartilhados para um terceiro módulo:
+
+```
+// Antes — circular
+usuario/model.sy  →  produto/model.sy  →  usuario/model.sy
+
+// Depois — sem ciclo
+shared/tipos.sy   ←  usuario/model.sy
+shared/tipos.sy   ←  produto/model.sy
+```
+
+---
+
+## Configuração do projeto
+
+O arquivo `soyuz.toml` na raiz define o projeto:
+
+```toml
+[projeto]
+nome = "minha-app"
+versao = "0.1.0"
+```
+
+---
+
+## Exemplos práticos
+
+### Separação de responsabilidades
+
+```soyuz
+// pedido/service.sy
+import (
+    { Pedido, StatusPedido } from @/pedido/model
+    { PedidoVazioError } from @/pedido/erros
+    { PedidoRepositorio } from @/pedido/repositorio
+)
+
+pub class PedidoService {
+    val repo: PedidoRepositorio
+
+    pub fn confirmar(self, id: Int) -> Result[Pedido] {
+        val pedido = self.repo.buscar(id) |?> fn(p) => p
+        // ... lógica
+        return pedido
+    }
+}
+```
+
+```soyuz
+// main.sy
+import (
+    { PedidoService } from @/pedido/service
+    { PedidoRepositorio } from @/pedido/repositorio
+)
+
+fn main() {
+    val repo = PedidoRepositorio { items: [] }
+    val service = PedidoService { repo: repo }
+
+    match service.confirmar(1) {
+        Ok(p) => print("Pedido confirmado")
+        Err(e) => print("Erro: $(e.message())")
+    }
+}
+```

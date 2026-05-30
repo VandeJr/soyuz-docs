@@ -1,0 +1,86 @@
+---
+title: Geração de Código (Codegen)
+description: Emissão de LLVM IR para binários nativos.
+sidebar:
+  order: 6
+---
+
+O módulo `codegen` é o penúltimo estágio do pipeline do compilador e é o responsável direto pela tradução da Árvore de Sintaxe Abstrata (AST) já verificada, junto com as anotações do Type Checker, para **LLVM IR (Intermediate Representation)**. 
+
+## Visão Geral do Módulo
+O módulo mapeia conceitos abstratos e açúcares sintáticos de alto nível do Soyuz (como `Option`, `Result`, Tasks assíncronas, Channels) em instruções de baixo nível usando a biblioteca de binding do LLVM para Go. Ele mantém o estado de escopos locais de ponteiros gerenciados para emissão correta das regras de `Reference Counting` (ARC) nos pontos de retorno e fim de bloco. 
+
+Ao concluir seu trabalho, `Generate()` devolve um módulo `*ir.Module`, que é então despejado como um arquivo `.ll` para que o compilador Clang proceda com a compilação cruzada para o arquivo objeto e linkagem estática.
+
+### Como Implementar o Codegen em Soyuz
+Se estivéssemos traduzindo este módulo para código nativo do Soyuz, utilizaríamos padrões fortes de construtores de strings (se optarmos por emitir LLVM IR em formato string puro, "texto") ou uma biblioteca bind FFI de `C` interagindo com a API core do LLVM (`llvm-c`).
+
+```soyuz
+// Exemplo conceitual do Gerador em Soyuz
+pub class Generator {
+    var checkResult: CheckResult
+    var module: ir.Module
+    var blockScope: List[Block]
+
+    pub fn generate(self, prog: Program) -> Result[ir.Module] {
+        // Itera sobre as declarações globais
+        // ...
+        return Ok(self.module)
+    }
+}
+```
+
+---
+
+## Arquivos do Módulo
+
+### `generator.go`
+**O que faz:** Contém a struct raiz `Generator` e o método de entrada central `Generate()`. É este arquivo que hospeda as ferramentas gerais: emissão de alocações na heap, gerenciamento de ciclos de vida de escopo (`pushScope` / `popScopeAndRelease`), contagem de referências (`emitRetain`, `emitRelease`) e inserções de blocos LLVM.
+**Onde é chamado:** No `cmd/main.go` como a fase final que requer a AST.
+**Principais Assinaturas:**
+- `func New(check *checker.CheckResult) *Generator`
+- `func (g *Generator) Generate(prog *parser.Program) (*ir.Module, error)`
+- `func (g *Generator) emitRetain(v value.Value)`
+- `func (g *Generator) emitRelease(v value.Value)`
+- `func (g *Generator) ownVar(name string)`
+
+### `gen_types.go`
+**O que faz:** Executa a tradução estrita das estruturas de tipo `checker.Type` para as classes LLVM C equivalentes (`types.Type`), como traduzir um `Int` da AST para um `i64` LLVM ou uma classe Soyuz para um `struct*` polimórfico.
+**Onde é chamado:** Por todo o codegen, sempre que a declaração da alocação da variável na stack (alloca) ou retorno for feita.
+**Principais Assinaturas:**
+- `func (g *Generator) mapTypeToLLVM(t checker.Type) types.Type`
+- `func (g *Generator) mapSoyuzTypeToLLVM(te parser.TypeExpr) types.Type`
+
+### `gen_exprs.go`
+**O que faz:** Este é o arquivo mais massivo do módulo. É responsável pela tradução de todas as expressões sintáticas – desde literais primitivos (Strings, inteiros), chamadas de método (`CallExpr`), sugar bindings (como alocações e desestruturações de Enums, `Option` e `Result`), até operações assíncronas de pipelines e Tasks (como `AsyncPipeExpr` e `TaskTap`). 
+**Como é usado:** Interage profundamente com as diretivas de casting dinâmico necessárias na compilação, além de preencher os bodies das tasks para a invocação da thread de runtime.
+**Principais Assinaturas:**
+- `func (g *Generator) generateExpr(node parser.Node) (value.Value, error)`
+- `func (g *Generator) generateCallExpr(n *parser.CallExpr) (value.Value, error)`
+- `func (g *Generator) generateEnumConstructor(...) (value.Value, error)`
+- `func (g *Generator) generateTaskExpr(n *parser.TaskExpr) (value.Value, error)`
+- `func (g *Generator) emitOptionResultAlloc(...) (value.Value, error)`
+
+### `gen_funcs.go`
+**O que faz:** Gera blocos estruturais e corpo iterativo para `FuncDecl` tradicionais. Também é incumbido da geração formidável de lambdas / closures (`generateArrowFunc`), alocando contextos de variáveis capturadas do ambiente exterior (fat pointers/environments structs).
+**Onde é chamado:** Na raiz de inicialização do programa (nível global) ou na avaliação de closures.
+**Principais Assinaturas:**
+- `func (g *Generator) generateFuncDecl(n *parser.FuncDecl) error`
+- `func (g *Generator) generateArrowFunc(n *parser.ArrowFunc) (value.Value, error)`
+- `func (g *Generator) buildClosureValue(...) (value.Value, error)`
+
+### `gen_control.go`
+**O que faz:** Orquestra a construção dos laços e fluxo estruturado da linguagem (Statements, Ifs, Whiles, Loops). Cuida dos intrincados saltos condicionais (LLVM Branches) apontando `Blocks` para os destinos verdadeiros/falsos.
+**Onde é chamado:** No corpo das funções durante o iterador das listas de Statements.
+**Principais Assinaturas:**
+- `func (g *Generator) generateBlock(n *parser.BlockStmt) (value.Value, error)`
+- `func (g *Generator) generateIfStmt(n *parser.IfStmt) (value.Value, error)`
+- `func (g *Generator) generateForStmt(n *parser.ForStmt) (value.Value, error)`
+
+### `gen_channel.go` & `gen_sync.go`
+**O que fazem:** Emitem invocações FFI diretas contra a biblioteca de Runtime (`C`). Descrevem semânticas complexas como a estruturação do canal (`Channel.new`, `Channel.send`, `generateSelectExpr`) e travas atômicas (`RwLock`, `Mutex`, `Atomic`). 
+**Onde é chamado:** Ao observar invocações tipadas pelo modulo Checker que dizem respeito a primitivos de concorrência.
+**Principais Assinaturas:**
+- `func (g *Generator) generateChannelSend(...) (value.Value, error)`
+- `func (g *Generator) generateSelectExpr(n *parser.SelectExpr) (value.Value, error)`
+- `func (g *Generator) generateMutexNew(n *parser.CallExpr) (value.Value, error)`

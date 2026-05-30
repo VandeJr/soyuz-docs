@@ -1,0 +1,107 @@
+---
+title: Parser
+description: Transformação de tokens em uma Árvore de Sintaxe Abstrata (AST)
+sidebar:
+  order: 4
+---
+
+O módulo `parser` é responsável por pegar a sequência de tokens gerada pelo Lexer e construir a **Árvore de Sintaxe Abstrata (AST)**. Ele utiliza uma combinação de **Recursive Descent** (descida recursiva) para controle de fluxo e declarações, e **Pratt Parsing** para a análise de expressões com tratamento dinâmico de precedência de operadores.
+
+## Visão Geral do Módulo
+Este módulo é a fundação para todas as fases seguintes. Ele consome a lista `[]lexer.Token`, avança o estado e constrói a árvore de nós (`Node`). Em caso de erros sintáticos, implementa técnicas de *error recovery* (`synchronize`), acumulando erros em vez de abortar imediatamente, o que é vital para prover múltiplos diagnósticos simultâneos no servidor LSP.
+
+### Como Implementar o Parser em Soyuz
+A lógica do parser baseia-se fortemente em pattern matching e checagem de lookahead. Para implementar esse parser dentro de Soyuz (visando self-hosting), utilizaríamos exaustivamente `enum`s e `record`s (equivalente às structs em Go). O fluxo poderia ser gerido com `class Parser` possuindo referências mutáveis para o stream de tokens.
+```soyuz
+// Exemplo conceitual da interface do Parser em Soyuz
+pub interface Node {
+    pub fn pos() -> Position
+}
+
+pub class Parser {
+    var tokens: List[Token]
+    var current: Int = 0
+
+    pub fn parse(self) -> Result[Program] {
+        // ... loop de parseTopLevel()
+    }
+}
+```
+
+---
+
+## Arquivos do Módulo
+
+### `ast.go`
+**O que faz:** Define todas as estruturas de nós (AST) da linguagem, a interface base `Node`, além de interfaces para tipos (`TypeExpr`) e padrões (`Pattern`).
+**Onde é chamado:** Usado globalmente como o vocabulário central entre o Parser, Type Checker, Codegen e LSP.
+**Como é usado:** Cada nó da árvore sintática (ex: `FuncDecl`, `BinaryExpr`, `IfStmt`) satisfaz a interface `Node` (e provê um método `Pos() lexer.Position` para localização e diagnóstico).
+**Principais Assinaturas:**
+- `func (p *Program) Pos() lexer.Position`
+- `func (i *ImportDecl) IsModuleImport() bool`
+- `func (i *ImportDecl) PathSegments() []string`
+
+### `parser.go`
+**O que faz:** Define o estado principal do parser (`Parser` struct) e as funções auxiliares de navegação (peek, advance, match, error recovery). É aqui que se encontra o ponto de entrada principal (`Parse()`).
+**Onde é chamado:** Instanciado no fluxo de compilação em `cmd/main.go` e continuamente no `lsp/engine.go`.
+**Como é usado:** Recebe uma lista de tokens, inicializa estado iterativo, e invoca métodos recursivos até esgotar os tokens.
+**Principais Assinaturas:**
+- `func New(tokens []lexer.Token) *Parser`
+- `func (p *Parser) Parse() *Program`
+- `func (p *Parser) peek() lexer.Token`
+- `func (p *Parser) advance() lexer.Token`
+- `func (p *Parser) check(t lexer.TokenType) bool`
+- `func (p *Parser) expect(t lexer.TokenType) lexer.Token`
+- `func (p *Parser) synchronize()`
+
+### `parse_decls.go`
+**O que faz:** Parseia declarações de escopo superior, também conhecidas como top-level declarations (funções, registros, classes, enums e imports).
+**Onde é chamado:** No laço principal (`Parse()`) em `parser.go` e em declarações aninhadas de escopo de bloco.
+**Como é usado:** Lê o modificador de visibilidade (ex. `pub`), consome a palavra-chave primária (`fn`, `class`, etc.), e avalia assinaturas, parâmetros, interfaces implementadas e os blocos de código subsequentes.
+**Principais Assinaturas:**
+- `func (p *Parser) parseTopLevel() Node`
+- `func (p *Parser) parseFuncDecl(pub bool) *FuncDecl`
+- `func (p *Parser) parseRecordDecl(pub bool) *RecordDecl`
+- `func (p *Parser) parseClassDecl(pub bool) *ClassDecl`
+- `func (p *Parser) parseEnumDecl(pub bool) *EnumDecl`
+- `func (p *Parser) parseImportSpec(blockPos lexer.Position) *ImportDecl`
+
+### `parse_exprs.go`
+**O que faz:** Analisa expressões da linguagem de forma eficiente usando **Pratt Parsing**.
+**Onde é chamado:** Quando sintaxes como `if`, `while`, associações e argumentos de funções esperam por um valor.
+**Como é usado:** Mapeia a precedência (Binding Power) de cada token (`bindingPower`). Lida unários via `parsePrefix` e então constrói binários, chamadas de método ou pipes em loop pelo `parseInfix` para construir a arvore corretamente sem ambiguidades.
+**Principais Assinaturas:**
+- `func bindingPower(t lexer.TokenType) int`
+- `func (p *Parser) parseExpression(minBP int) Node`
+- `func (p *Parser) parsePrefix() Node`
+- `func (p *Parser) parseInfix(left Node) Node`
+- `func (p *Parser) parseCallArgs() []Node`
+- `func (p *Parser) parseMatchExpr() *MatchExpr`
+
+### `parse_stmts.go`
+**O que faz:** Parseia sentenças lógicas, laços e fluxos imperativos. Identifica declarações puras contra expressões de side-effect.
+**Onde é chamado:** Em laços dentro de blocos estruturados (chaves `{ ... }`).
+**Como é usado:** Verifica keywords iniciais (`if`, `for`, `while`, `return`) delegando para suas respectivas rotinas. Devolve representações de AST como `*IfStmt` ou `*ReturnStmt`.
+**Principais Assinaturas:**
+- `func (p *Parser) parseStatement() Node`
+- `func (p *Parser) parseBlock() *BlockStmt`
+- `func (p *Parser) parseIf() *IfStmt`
+- `func (p *Parser) parseFor() Node`
+- `func (p *Parser) parseWhile() *WhileStmt`
+- `func (p *Parser) parseSelectExpr() *SelectExpr`
+
+### `parse_patterns.go`
+**O que faz:** Destrincha a gramática de *Pattern Matching*, usada predominantemente em `match arms` e destructuring.
+**Onde é chamado:** Avaliado em partes esquerdas de bind ou em *arms* processados em `parse_exprs.go` para `MatchExpr`.
+**Como é usado:** Pode construir `BindingPattern`, `RecordPattern` para tipos estruturados, literais puros ou constructores (tipos de enums com argumentos).
+**Principais Assinaturas:**
+- `func (p *Parser) parsePattern() Pattern`
+- `func (p *Parser) parseConstructorPatternArgs() []Pattern`
+- `func (p *Parser) parseRecordPatternBody(pos lexer.Position, name string) *RecordPattern`
+
+### `parse_types.go`
+**O que faz:** Analisa as anotações estáticas da tipagem no código (como `String`, `List[Int]`, `String?`).
+**Onde é chamado:** Esperado sempre após dois pontos `:` em declarações de variáveis ou em retornos de funções `->`.
+**Como é usado:** Constrói um `TypeExpr` que será posteriormente verificado pelo `Checker` para unificação concreta na tabela de símbolos.
+**Principais Assinaturas:**
+- `func (p *Parser) parseTypeExpr() TypeExpr`

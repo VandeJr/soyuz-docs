@@ -1,0 +1,172 @@
+---
+title: Paralelismo e Concorrência
+description: Modelo M:N, Tasks leves, Channels e composição assíncrona em Soyuz.
+sidebar:
+  order: 14
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Soyuz foi projetada para alta performance e escalabilidade, utilizando um modelo de **Paralelismo de Tarefas (Task-based Parallelism)** com um scheduler M:N altamente eficiente. Diferente de linguagens que usam threads do sistema operacional diretamente, Soyuz utiliza "Tasks" leves que são escalonadas sobre um pool de threads do sistema.
+
+---
+
+## O Modelo de Concorrência
+
+O runtime da linguagem implementa um scheduler com **Work-Stealing**, permitindo que milhares de tarefas sejam executadas simultaneamente com baixo overhead.
+
+- **Tasks**: Unidades de execução leves (corotinas).
+- **M:N Scheduler**: M tarefas mapeadas em N threads de sistema (carriers).
+- **Cooperativo**: Tarefas cedem execução em pontos de I/O ou sincronização.
+
+---
+
+## Trabalhando com Tasks
+
+A primitiva fundamental é a keyword `task`, que dispara uma função para ser executada em background.
+
+```soyuz
+fn soma(a: Int, b: Int) -> Int = a + b
+
+fn main() {
+    // Spawna uma task
+    val t = task soma(10, 20)
+    
+    // Faz outras coisas...
+    
+    // Aguarda o resultado (bloqueia apenas a task atual, não a thread)
+    val resultado = t.await()
+    print("Resultado: $(resultado)")
+}
+```
+
+### Gestão de Ciclo de Vida
+
+- **`.await()`**: Aguarda a conclusão e retorna o valor.
+- **`.detach()`**: Desvincula a task do escopo atual. Ela continua rodando até o fim, mas você perde o acesso ao resultado.
+- **`.cancel()`**: Sinaliza que a task deve ser interrompida. Cabe à task verificar o sinal via `TaskHandle`.
+
+<Aside type="caution">
+  Soyuz exige que toda task seja consumida via `.await()` ou `.detach()`. Deixar uma task "solta" sem consumo gera um aviso de compilação (W0300) e pode resultar em pânico se o handle for destruído enquanto a task ainda corre.
+</Aside>
+
+---
+
+## Composição Assíncrona
+
+Soyuz oferece operadores específicos para encadear operações assíncronas de forma elegante.
+
+### Async Pipe `~>`
+Cria uma cadeia onde cada etapa é executada como uma nova task assim que a anterior termina.
+
+```soyuz
+val t = input ~> validar ~> processar ~> formatar
+val final = t.await()
+```
+
+### Async Pipe-Quest `~?>`
+Versão do pipe assíncrono que entende `Result` e `Option`. Ele interrompe a cadeia automaticamente se um passo retornar `Err` ou `None`.
+
+```soyuz
+// Se validar retornar Err, processar nunca será chamada.
+val t = input ~> validar ~?> processar
+```
+
+---
+
+## Comunicação com Channels
+
+Canais são a forma recomendada de comunicar dados entre tarefas, seguindo o mantra: *"Não comunique compartilhando memória; compartilhe memória comunicando"*.
+
+```soyuz
+fn produtor(ch: Channel[Int]) {
+    for i in 1..=5 {
+        ch.send(i)
+    }
+    ch.close()
+}
+
+fn main() {
+    val ch = Channel.new(8) // Buffer de 8 elementos
+    task produtor(ch)
+    
+    while !ch.isClosed() {
+        match ch.recv() {
+            Some(v) => print("Recebido: $(v)")
+            None    => break
+        }
+    }
+}
+```
+
+- **Rendezvous**: `Channel.new(0)` cria um canal síncrono onde o emissor bloqueia até que haja um receptor.
+- **Buffered**: `Channel.new(N)` permite enviar até N itens antes de bloquear.
+
+---
+
+## Multiplexação com `select`
+
+O bloco `select` permite aguardar múltiplos canais ou tarefas simultaneamente. Ele executa o primeiro braço que estiver pronto.
+
+```soyuz
+val t = task operacaoLonga()
+val ch = Channel.new(1)
+
+select {
+    res = t.await() => print("Task terminou: $(res)")
+    msg = ch.recv() => print("Canal recebeu: $(msg)")
+    default         => print("Nada pronto ainda")
+}
+```
+
+---
+
+## Combinadores e Paralelismo de Dados
+
+Para processar coleções ou múltiplas tarefas de uma vez:
+
+### `Task.gather`
+Substitui loops paralelos, aplicando uma função a cada item de uma lista em paralelo e retornando uma lista com os resultados.
+
+```soyuz
+val nums = [1, 2, 3, 4, 5]
+val dobrados = Task.gather(nums, fn(x) => x * 2)
+```
+
+### `Task.all`
+Aguardar múltiplas tarefas heterogêneas e receber os resultados como uma tupla.
+
+```soyuz
+val t1 = task buscarUsuario(id)
+val t2 = task buscarPosts(id)
+
+val (user, posts) = Task.all(t1, t2)
+```
+
+---
+
+## Sincronização e Estado Compartilhado
+
+Quando a mutabilidade compartilhada é inevitável, Soyuz provê primitivas seguras que garantem o destravamento automático via escopo.
+
+```soyuz
+val mutex = Mutex.new(0)
+
+fn incremento() {
+    // O lock é liberado automaticamente ao fim do bloco (RAII)
+    var guard = mutex.lock()
+    guard.value = guard.value + 1
+}
+```
+
+- **`Mutex[T]`**: Exclusão mútua simples.
+- **`RwLock[T]`**: Múltiplos leitores ou um único escritor.
+*   **`Atomic[T]`**: Operações atômicas de baixo nível (CAS, Add, etc).
+
+---
+
+## Introspecção e Callbacks
+
+- **`TaskHandle.current()`**: Permite que uma tarefa acesse seu próprio estado (ex: verificar cancelamento ou reportar progresso).
+- **`.tap(fn)`**: Executa um efeito colateral com o resultado sem alterar o tipo da task.
+- **`.always(fn)`**: Executa um bloco de código independentemente do sucesso ou falha da task (finalizador).

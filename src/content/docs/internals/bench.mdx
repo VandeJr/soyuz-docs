@@ -1,0 +1,62 @@
+---
+title: Benchmarks
+description: Scripts de teste de performance e comparação
+sidebar:
+  order: 11
+---
+
+O módulo `bench` é responsável por executar testes de performance (benchmarks) comparativos entre a linguagem Go e a linguagem Soyuz. Ele não faz parte do pipeline de compilação do Soyuz, mas atua como uma ferramenta de validação para garantir que o runtime nativo do Soyuz e sua concorrência apresentem desempenho adequado em relação ao Go.
+
+## Visão Geral do Módulo
+O módulo contém scripts iterativos que disparam cargas de trabalho (como cálculos matemáticos repetitivos e recursivos) para analisar o throughput e o tempo de execução. As métricas ajudam no diagnóstico e otimização do codegen e do runtime C, especialmente em relação ao escalonador de tarefas assíncronas do Soyuz.
+
+### Como Implementar o Bench em Soyuz
+Para implementar os testes de benchmark em Soyuz Lang, podemos utilizar os recursos assíncronos e combinadores nativos da linguagem. O equivalente em Soyuz para `sync.WaitGroup` e a criação de múltiplas goroutines em Go é a utilização das primitivas `task`, `await` ou do combinador paralelo `Task.gather`, presente na consolidação da API assíncrona.
+
+Por exemplo, a execução e sincronização do benchmark em Soyuz pode ser escrita assim:
+```soyuz
+import { range } from @soyuz/prelude
+
+fn soma(m: Int) -> Int {
+    var s = 0
+    for i in 1..=m {
+        s = s + i
+    }
+    return s
+}
+
+fn rodar(n: Int, m: Int) -> Int {
+    val nums = range(1, n)
+    // Dispara 'n' tasks paralelamente e aguarda todas finalizarem com Task.gather
+    val resultados = Task.gather(nums, fn(_) => soma(m))
+    
+    var total = 0
+    for r in resultados {
+        total = total + r
+    }
+    return total
+}
+```
+
+---
+
+## Arquivos do Módulo
+
+### `bench.go`
+**O que faz:** Realiza um teste de throughput e escalabilidade executando centenas ou milhares de goroutines simultaneamente. Calcula uma soma linear em cada goroutine para simular trabalho na CPU e exibe métricas formatadas, como o tempo de execução e throughput por segundo.
+**Onde é chamado:** Executado de forma avulsa via terminal (`go run bench/bench.go`) para levantar dados base do Go.
+**Como é usado:** Serve de comparativo direto para os testes em Soyuz (como `bench.sy`). É usado ajustando o número de workers simultâneos (`N`) e a carga (`M`) no `main` para comparar com o comportamento de concorrência massiva no runtime Soyuz.
+**Principais Assinaturas:**
+- `func soma(lim int) int`
+- `func rodar(n, m int) int`
+- `func bench(label string, n, m int)`
+- `func main()`
+
+### `raw_bench.go`
+**O que faz:** Fornece um benchmark de performance single-thread "bruto", priorizando a velocidade da CPU em laços de repetição densos e chamadas recursivas profundas (como a função Fibonacci). 
+**Onde é chamado:** Executado manualmente via `go run bench/raw_bench.go`.
+**Como é usado:** Atua como baseline absoluto de cálculo lógico, medindo a velocidade do binário gerado na CPU em oposição ao script iterativo `raw_bench.sy` do Soyuz ou linguagens de script interpretadas como o Python (`raw_bench.py`).
+**Principais Assinaturas:**
+- `func soma(n int) int`
+- `func fib(n int) int`
+- `func main()`

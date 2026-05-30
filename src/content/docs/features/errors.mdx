@@ -1,0 +1,173 @@
+---
+title: Tratamento de Erros
+description: Erros como valores em Soyuz — Result[T], a interface Error e o operador PipeQuest.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Soyuz não tem exceções. Erros são **valores** — eles aparecem nos tipos de retorno e o compilador força você a tratá-los.
+
+---
+
+## A filosofia
+
+Em linguagens com exceções, um erro pode aparecer em qualquer ponto do código sem indicação no tipo. Em Soyuz, se uma função pode falhar, isso está **no tipo de retorno**:
+
+```soyuz
+// Essa função pode falhar — o tipo diz isso
+fn buscarUsuario(id: Int) -> Result[Usuario]
+
+// Essa função não pode falhar — o tipo diz isso também
+fn dobrar(x: Int) -> Int
+```
+
+Você nunca é surpreendido por um erro que não estava esperando.
+
+---
+
+## Result[T]
+
+`Result[T]` tem duas variantes:
+
+- `Ok(T)` — a operação foi bem-sucedida, com valor `T`
+- `Err(E: Error)` — a operação falhou, com um erro do tipo `E` que implementa a interface `Error`.
+
+```soyuz
+fn dividir(a: Float, b: Float) -> Result[Float] {
+    if b == 0.0 {
+        return Err(DivisaoErro { dividendo: a })
+    }
+    return Ok(a / b)
+}
+```
+
+---
+
+## A interface Error
+
+Todo erro implementa a interface `Error`:
+
+```soyuz
+interface Error {
+    fn message(self) -> String
+    fn code(self) -> Int
+}
+```
+
+Você define seus erros como classes:
+
+```soyuz
+class DivisaoErro : Error {
+    val dividendo: Float
+
+    fn message(self) -> String {
+        return "Divisão de $(self.dividendo) por zero"
+    }
+
+    fn code(self) -> Int { return 400 }
+}
+```
+
+<Aside type="tip">
+Por convenção, classes de erro têm sufixo `Erro` e são declaradas próximas à função que as emite.
+</Aside>
+
+---
+
+### Criando valores Result (Auto-wrap)
+
+Você pode criar valores `Result` explicitamente ou usar o **açúcar sintático** do Soyuz, que envolve o valor automaticamente se o tipo de retorno for conhecido:
+
+```soyuz
+// Com açúcar (auto-wrap)
+fn buscar() -> Result[Usuario] {
+    if erro {
+        return DbErro { ... } // automático Err()
+    }
+    return usuario            // automático Ok()
+}
+```
+
+O `Err()` é inferido automaticamente se o valor retornado implementar a interface `Error`.
+
+---
+
+## Tratando Result com match
+
+A forma mais explícita:
+
+```soyuz
+val resultado = dividir(10.0, 2.0)
+
+match resultado {
+    Ok(v)  => print("Resultado: $(v)")
+    Err(e) => print("Erro: $(e.message())")
+}
+```
+
+---
+
+## Piping com PipeQuest (`|?>`)
+
+O operador `|?>` é **Result-aware**. Quando a expressão à esquerda é `Result[T]` ou `Option[T]`, o pipe automaticamente:
+
+1. **Extrai o valor** se for `Ok(v)` ou `Some(v)` e passa `v` para a próxima função.
+2. **Curto-circuita** se for `Err(e)` ou `None` — para o pipeline e propaga o erro.
+
+```soyuz
+fn buscar(id: Int) -> Result[Usuario]
+fn validar(u: Usuario) -> Result[Usuario]
+fn transformar(u: Usuario) -> Result[Dados]
+
+// O tipo final é Result[Dados]
+// Se qualquer etapa falhar, o erro é propagado
+val resultado: Result[Dados] = buscar(1) |?> validar |?> transformar
+```
+
+---
+
+## Option vs Result — quando usar cada um
+
+| Situação | Tipo correto |
+|---|---|
+| A função pode não encontrar o valor, e isso é normal | `Option[T]` / `T?` |
+| A função falhou por alguma razão que importa | `Result[T]` |
+| Coleção pode estar vazia | `List[T]` (lista vazia) |
+
+---
+
+## Exemplo completo
+
+```soyuz
+class ValidacaoErro : Error {
+    val campo: String
+    fn message(self) -> String = "Campo inválido: $(self.campo)"
+    fn code(self) -> Int = 422
+}
+
+fn validarEmail(email: String) -> Result[String] {
+    if !email.contains("@") {
+        return Err(ValidacaoErro { campo: "email" })
+    }
+    return email // auto-wrap Ok()
+}
+
+fn salvarNoBanco(email: String) -> Result[Unit] {
+    // simulação
+    return () // auto-wrap Ok()
+}
+
+fn registrar(email: String) -> Result[Unit] {
+    return validarEmail(email) |?> salvarNoBanco
+}
+
+fn main() {
+    registrar("vand@soyuz.dev")
+        .match {
+            Ok(_) => print("Sucesso")
+            Err(e) => print("Falha: $(e.message())")
+        }
+}
+```

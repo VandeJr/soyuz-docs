@@ -1,0 +1,96 @@
+---
+title: Language Server (LSP)
+description: Implementação do protocolo LSP para Soyuz.
+sidebar:
+  order: 9
+---
+
+O LSP do Soyuz compartilha o front-end do compilador para garantir paridade total entre o que o compilador vê e o que o editor exibe.
+
+## Visão Geral do Módulo
+Este módulo implementa o protocolo de servidor de linguagem (LSP) e provê infraestrutura para os editores suportarem diagnóstico em tempo real, formatação e navegação (go-to-definition, hover, autocompletar, entre outros). Diferente da rotina de compilação via CLI (`build`), o LSP funciona como um processo persistente, no qual a **Engine** intercepta (com debounce) alterações nos documentos, executando continuamente as fases de análise léxica, sintática e semântica. Além disso, o módulo mantém um índice global (`SymbolIndex`) do workspace inteiro e envia notificações ativamente para o cliente (editor).
+
+### Como Implementar o LSP em Soyuz
+Para uma implementação self-hosted de um Servidor de Linguagem, poderíamos usar as primitivas assíncronas do Soyuz (como `task` e `Channel`) para tratar requisições JSON-RPC de forma não bloqueante e com paralelismo.
+
+```soyuz
+// Exemplo conceitual do LSP em Soyuz
+import { Result } from @soyuz/prelude
+
+pub class LspEngine {
+    var workspaceRoot: String
+    var msgChannel: Channel[String]
+
+    pub fn start(self) {
+        // ... loop de eventos, aguardando RPCs do cliente
+    }
+
+    pub fn analyze(self, uri: String, text: String) {
+        // ... executar lexer, parser, type checker
+    }
+}
+```
+
+---
+
+## Arquivos do Módulo
+
+### `engine.go`
+**O que faz:** É o motor central incremental do LSP. Mantém o estado atual, a árvore AST e os resultados do type-checking para todos os arquivos em aberto. Utiliza debouncing (300 ms) para evitar o reprocessamento imediato a cada tecla digitada.
+**Onde é chamado:** Integrado dentro da estrutura do `Handler` para servir de cérebro do LSP.
+**Como é usado:** Sempre que um arquivo é aberto (`Open`), alterado (`Update`) ou fechado (`Close`), a engine reavalia o código chamando as etapas do compilador, atualiza o índice local e dispara eventos de `publishDiagnostics` se houver erros de parser ou checker.
+**Principais Assinaturas:**
+- `func NewEngine(notify func(uri string, result *AnalysisResult)) *Engine`
+- `func (e *Engine) Open(uri, text string)`
+- `func (e *Engine) Update(uri, text string)`
+- `func (e *Engine) Close(uri string)`
+- `func (e *Engine) Get(uri string) *AnalysisResult`
+- `func (e *Engine) analyze(uri string)`
+- `func (e *Engine) analyzeWithStdlib(filePath, text string, prog *parser.Program) *checker.CheckResult`
+
+### `handler.go`
+**O que faz:** Implementa a interface do servidor LSP através do framework `glsp`. Traduz os métodos do protocolo (LSP 3.16) para execuções específicas de negócio no AST de Soyuz.
+**Onde é chamado:** Pelo ponto de entrada da ferramenta LSP (`cmd/lsp/main.go`).
+**Como é usado:** Registra funções nos callbacks do servidor que interceptam as chamadas (como inicialização, hover, auto-completar, referências cruzadas e renomeação) e acessa o estado do documento corrente através da `Engine`.
+**Principais Assinaturas:**
+- `func NewHandler() *Handler`
+- `func (h *Handler) handleInitialize(ctx *glsp.Context, params *protocol.InitializeParams) (any, error)`
+- `func (h *Handler) handleHover(ctx *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error)`
+- `func (h *Handler) handleDefinition(ctx *glsp.Context, params *protocol.DefinitionParams) (any, error)`
+- `func (h *Handler) handleCompletion(ctx *glsp.Context, params *protocol.CompletionParams) (any, error)`
+
+### `workspace.go`
+**O que faz:** Gerencia o `SymbolIndex`, que atua como um indexador cruzado de arquivos na área de trabalho. Mantém rastreabilidade sobre a localização e tipagem de funções, registros e variáveis públicas para permitir navegação global e referências.
+**Onde é chamado:** Acionado pelo `engine.go` sempre que um arquivo é analisado (atualização incremental) e no boot da workspace.
+**Como é usado:** Realiza uma varredura DFS no diretório raiz na inicialização para processar preventivamente todos os arquivos `.sy`. Responde às solicitações de lookup durante execuções de features do editor (como Goto Definition).
+**Principais Assinaturas:**
+- `type SymbolIndex struct`
+- `func NewSymbolIndex() *SymbolIndex`
+- `func (idx *SymbolIndex) Update(uri string, result *AnalysisResult)`
+- `func (idx *SymbolIndex) Lookup(name string) []IndexedSymbol`
+- `func (e *Engine) IndexWorkspace(root string)`
+
+### `format.go`
+**O que faz:** Atua como o formatador embutido oficial (pretty-printer) do código fonte Soyuz. Aplica espaçamentos corretos e organiza as declarações globalmente.
+**Onde é chamado:** Acionado quando o editor emite uma chamada `textDocument/formatting`.
+**Como é usado:** Consome a AST atual validada pela Engine e usa um padrão de visitante (`printer`) para reconstruir o código textual idealizado, substituindo o buffer inteiro do arquivo.
+**Principais Assinaturas:**
+- `func formatProgram(prog *parser.Program, src string) string`
+- `func (p *printer) printProgram(prog *parser.Program)`
+
+### `inlayhint.go`
+**O que faz:** Fornece "inlay hints" baseados na especificação LSP 3.17, renderizando a tipagem inferida de declarações variáveis visualmente dentro do código do usuário sem estar escrita nele.
+**Onde é chamado:** Atua como um *override* especial na chamada da requisição HTTP interceptando chamadas para a rota `textDocument/inlayHint`.
+**Como é usado:** Identifica nós `VarDecl` com tipos ocultos que foram unificados pelo Checker e devolve anotações virtuais `": Tipo"` para o editor injetar após o nome da variável.
+**Principais Assinaturas:**
+- `func (h *Handler) handleInlayHints(_ *glsp.Context, params *InlayHintParams) ([]InlayHint, error)`
+
+### `util.go`
+**O que faz:** Um aglomerado de utilitários de conveniência que permitem a tradução dimensional das coordenadas do editor (`0-based` position LSP) para as coordenadas internas do compilador Soyuz (`1-based`).
+**Onde é chamado:** Usado através de todos os arquivos de handler e features LSP.
+**Como é usado:** Fornece as abstrações primárias como a varredura (`walkAST`) e o localizador de nó (`findNodeAt`) pelo cursor.
+**Principais Assinaturas:**
+- `func fromLSPPosition(p protocol.Position) lexer.Position`
+- `func toLSPPosition(p lexer.Position) protocol.Position`
+- `func findNodeAt(prog *parser.Program, pos lexer.Position) parser.Node`
+- `func walkAST(prog *parser.Program, fn func(parser.Node))`

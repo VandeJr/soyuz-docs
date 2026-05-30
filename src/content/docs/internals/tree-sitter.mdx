@@ -1,0 +1,59 @@
+---
+title: Tree-sitter Soyuz
+description: Gramática incremental e suporte a editores.
+sidebar:
+  order: 12
+---
+
+O módulo `tree-sitter-soyuz` provê uma gramática incremental para a linguagem Soyuz, permitindo que editores de texto e o Servidor de Linguagem (LSP) realizem tarefas de análise sintática em tempo real com alta performance.
+
+## Visão Geral do Módulo
+Diferente do parser principal do compilador (escrito em Go com Pratt Parsing), o Tree-sitter utiliza um algoritmo GLR para construir uma árvore de sintaxe concreta. Esta árvore é otimizada para edições incrementais: ao alterar um caractere, apenas a parte afetada da árvore é recalculada, geralmente em menos de 1ms.
+
+Este módulo é essencial para:
+1. **Syntax Highlighting:** Coloração de sintaxe precisa baseada em nós da árvore.
+2. **Indentação e Folding:** Regras automáticas para formatar e recolher blocos de código.
+3. **Navegação (LSP):** Identificação rápida de símbolos e definições para funcionalidades como "Go to Definition" e "Find References".
+
+### Como Implementar o Tree-sitter em Soyuz
+Embora a gramática seja definida em JavaScript (`grammar.js`), o parser resultante é gerado em C puro. Em uma implementação de Soyuz que utiliza seus próprios bindings, o fluxo envolveria carregar o objeto compartilhado (`.so` ou `.dll`) do parser e interagir com a API do Tree-sitter via FFI.
+
+```soyuz
+// Exemplo conceitual de uso do Tree-sitter em Soyuz
+import { Parser, Language } from @soyuz/tree-sitter
+
+fn main() {
+    val parser = Parser.new()
+    parser.setLanguage(Language.soyuz())
+    
+    val source = "fn soma(a: Int, b: Int) = a + b"
+    val tree = parser.parse(source)
+    
+    val root = tree.rootNode()
+    print("Tipo do nó raiz: $(root.type())")
+}
+```
+
+---
+
+## Arquivos e Estrutura
+
+### `grammar.js`
+**O que faz:** É a fonte de verdade da gramática. Define as regras léxicas e sintáticas da linguagem usando a DSL do Tree-sitter. 
+**Como é usado:** Processado pela CLI do `tree-sitter` para gerar o código do parser em C (`src/parser.c`). Ele mapeia as precedências de operadores do Soyuz para garantir que expressões complexas (como pipes `|>` e safe navigation `?.`) sejam parseadas corretamente.
+
+### `bindings/go/binding.go`
+**O que faz:** Provê a ponte (CGO) necessária para que o código Go do compilador e do LSP consiga instanciar e utilizar o parser Tree-sitter.
+**Onde é chamado:** Utilizado pelo `internal/lsp` para indexação rápida de símbolos no workspace.
+**Principais Assinaturas:**
+- `func Language() unsafe.Pointer`: Retorna o ponteiro para a definição da linguagem Soyuz compatível com a biblioteca `go-tree-sitter`.
+
+### `queries/*.scm`
+**O que faz:** Arquivos em formato Scheme que definem padrões de busca na árvore de sintaxe para funcionalidades específicas.
+- `highlights.scm`: Mapeia nós (como `func_decl`, `string_literal`) para escopos de cores do editor.
+- `indents.scm`: Define onde o editor deve adicionar ou remover níveis de indentação.
+- `folds.scm`: Identifica quais blocos (funções, registros, classes) podem ser recolhidos.
+**Como é usado:** Consumido por editores como Neovim, Helix e Zed, além do próprio LSP do Soyuz.
+
+### `setup.md`
+**O que faz:** Documentação técnica detalhada sobre a implementação da gramática, incluindo a tabela de precedência de operadores, status de cada milestone de desenvolvimento e diretrizes para inserção automática de ponto-e-vírgula.

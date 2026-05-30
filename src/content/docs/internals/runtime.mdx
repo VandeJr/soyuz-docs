@@ -1,0 +1,35 @@
+---
+title: Runtime e Stdlib
+description: Suporte nativo e biblioteca padrão embutida
+sidebar:
+  order: 10
+---
+
+O Soyuz utiliza uma estratégia de "compilação com baterias inclusas", onde o runtime em C e a biblioteca padrão em Soyuz são embutidos diretamente no binário do compilador. Isso elimina a necessidade de dependências externas complexas durante o processo de build.
+
+## Visão Geral do Módulo
+O runtime fornece as primitivas fundamentais que o código gerado pelo `codegen` necessita, como o escalonador de tarefas, gerenciamento de memória via Reference Counting (ARC), canais de comunicação e drivers de I/O. A biblioteca padrão (`stdlib`) expande essas primitivas em abstrações de alto nível.
+
+### Como Implementar o Runtime em Soyuz
+No self-hosting, o runtime continuaria sendo escrito em C (ou uma linguagem de baixo nível) por questões de performance e acesso direto ao hardware/SO, enquanto a stdlib seria escrita inteiramente em Soyuz Lang.
+
+---
+
+## Arquivos do Módulo
+
+### `internal/runtime/embed.go`
+**O que faz:** Utiliza a diretiva `//go:embed` do Go para incluir os arquivos fonte em C (`.c` e `.h`) dentro do binário do compilador.
+**Onde é chamado:** Pelo `cmd/main.go` durante o processo de compilação de um programa Soyuz.
+**Como é usado:** O compilador extrai esses arquivos para um diretório temporário e os compila junto com o LLVM IR gerado usando o `clang`. Isso garante que a versão do runtime seja sempre compatível com a versão do compilador.
+**Principais Assinaturas:**
+- `var Source []byte` (conteúdo de `rc.c`)
+- `var SoyuzRTSource []byte` (conteúdo de `soyuz_rt.c`)
+- `var StdIOSource []byte` (e outros drivers de stdlib nativa)
+
+### `std/embed.go`
+**O que faz:** Embute recursivamente todos os arquivos `.sy` localizados no diretório `std/lib/`.
+**Onde é chamado:** Pelo `internal/module/resolver.go` para resolver imports que começam com `@soyuz/`.
+**Como é usado:** Fornece um mapa `Files` que relaciona o caminho lógico do módulo (ex: `prelude`, `collections/list`) com o conteúdo do arquivo. O `init()` do pacote percorre automaticamente o sistema de arquivos embutido para preencher esse mapa.
+**Principais Assinaturas:**
+- `var FS embed.FS`
+- `var Files map[string][]byte`

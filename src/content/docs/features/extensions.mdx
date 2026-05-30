@@ -1,0 +1,72 @@
+---
+title: Extensões (extend)
+description: Adicionando métodos a tipos existentes em Soyuz usando a keyword extend.
+sidebar:
+  order: 12
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Soyuz permite adicionar novos métodos a tipos já definidos através do bloco `extend`. Isso é útil para estender a funcionalidade de bibliotecas ou da stdlib sem usar herança.
+
+---
+
+## Sintaxe básica
+
+O bloco `extend` recebe o nome do tipo que você deseja estender:
+
+```soyuz
+extend String {
+    pub fn exclamar(self) -> String = "$(self)!"
+
+    pub fn repetir(self, n: Int) -> String {
+        var resultado = ""
+        for i in 0..n {
+            resultado = "$(resultado)$(self)"
+        }
+        return resultado
+    }
+}
+```
+
+Agora, qualquer `String` no seu programa pode usar esses métodos:
+
+```soyuz
+val msg = "Olá"
+print(msg.exclamar())       // "Olá!"
+print("abc".repetir(3))     // "abcabcabc"
+```
+
+---
+
+## Características das extensões
+
+1.  **Sem Herança**: Extensões não criam novos tipos; elas apenas adicionam comportamento ao tipo original.
+2.  **Acesso a `self`**: O método estendido recebe `self` como primeiro parâmetro.
+3.  **Visibilidade**: Use `pub` dentro do bloco `extend` para que o método seja visível fora do módulo.
+4.  **Tipos Suportados**: Você pode estender tipos primitivos (`Int`, `String`, etc.), `class` e `enum`.
+
+<Aside type="danger">
+**Records não podem ser estendidos.** Por design, records são estruturas de dados puras e imutáveis sem comportamento. Se você precisa de métodos, use uma `class`.
+</Aside>
+
+---
+
+## Exemplo: Estendendo uma classe
+
+```soyuz
+class Usuario {
+    val nome: String
+}
+
+extend Usuario {
+    pub fn saudar(self) = print("Olá, $(self.nome)")
+}
+
+val u = Usuario { nome: "Vand" }
+u.saudar()
+```
+
+<Aside type="tip">
+As extensões são resolvidas em tempo de compilação, garantindo a mesma performance de um método nativo.
+</Aside>

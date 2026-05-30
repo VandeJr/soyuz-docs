@@ -1,0 +1,308 @@
+---
+title: Classes e Interfaces
+description: Programação orientada a objetos em Soyuz — classes, interfaces, sem herança.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Soyuz suporta OOP com uma restrição deliberada: **sem herança entre classes**. Comportamento compartilhado é expresso exclusivamente via interfaces e composição.
+
+---
+
+## Interfaces
+
+Interfaces definem contratos. São um conjunto de assinaturas de método que uma classe deve implementar.
+
+```soyuz
+interface Persistivel {
+    fn salvar(self) -> Result[Unit]
+    fn deletar(self, id: Int) -> Result[Unit]
+}
+
+interface Serializavel {
+    fn toJson(self) -> String
+    fn fromJson(json: String) -> Result[Self]
+}
+
+interface Auditavel {
+    fn log(self) -> String
+}
+```
+
+Interfaces **não têm implementação** — apenas assinaturas. Isso as mantém como contratos puros.
+
+### Interfaces genéricas
+
+```soyuz
+interface Repositorio[T] {
+    fn buscar(self, id: Int) -> Option[T]
+    fn salvarTodos(self, items: List[T]) -> Result[Unit]
+}
+
+interface Comparavel[T] {
+    fn comparar(self, outro: T) -> Int   // -1, 0, ou 1
+}
+```
+
+---
+
+## Classes
+
+Classes combinam dados e comportamento. Podem implementar múltiplas interfaces, mas não herdam de outras classes.
+
+```soyuz
+class Usuario : Persistivel, Serializavel {
+    val id: Int
+    val nome: String
+    var idade: Int
+    var email: String
+
+    fn salvar(self) -> Result[Unit] {
+        // implementação
+        return Ok(())
+    }
+
+    fn deletar(self, id: Int) -> Result[Unit] {
+        return Ok(())
+    }
+
+    fn toJson(self) -> String {
+        return "{\"id\": $(self.id), \"nome\": \"$(self.nome)\"}"
+    }
+
+    fn fromJson(json: String) -> Result[Usuario] {
+        // implementação
+        return Err(ParseErro { input: json })
+    }
+}
+```
+
+### Criando instâncias
+
+Classes são instanciadas com a sintaxe de record literal:
+
+```soyuz
+val u = Usuario {
+    id: 1,
+    nome: "Vand",
+    idade: 28,
+    email: "vand@soyuz.dev"
+}
+```
+
+---
+
+## Campos
+
+Classes podem ter campos `val` (imutáveis) e `var` (mutáveis):
+
+```soyuz
+class Produto {
+    val id: Int        // imutável após criação
+    val nome: String   // imutável após criação
+    var preco: Float   // pode ser alterado
+    var estoque: Int   // pode ser alterado
+}
+```
+
+### Mutabilidade de self
+
+Quando um método modifica um campo `var`, o `self` é mutável implicitamente. Não há `mut self`:
+
+```soyuz
+class ContaBancaria {
+    val titular: String
+    var saldo: Float
+
+    fn depositar(self, valor: Float) -> Result[Float] {
+        if valor <= 0.0 {
+            return Err(ValorInvalidoErro { valor: valor })
+        }
+        self.saldo = self.saldo + valor   // OK — saldo é var
+        return Ok(self.saldo)
+    }
+
+    fn titular(self) -> String {
+        return self.titular   // OK — acesso somente leitura
+    }
+}
+```
+
+<Aside type="caution">
+Tentar reatribuir um campo `val` em um método resulta em erro de compilação:
+
+```soyuz
+fn errado(self) {
+    self.id = 99   // ERRO — id é val
+}
+```
+</Aside>
+
+---
+
+## Métodos
+
+Todos os métodos recebem `self` explicitamente como primeiro parâmetro:
+
+```soyuz
+class Retangulo {
+    val largura: Float
+    val altura: Float
+
+    fn area(self) -> Float {
+        return self.largura * self.altura
+    }
+
+    fn perimetro(self) -> Float {
+        return 2.0 * (self.largura + self.altura)
+    }
+
+    fn escalar(self, fator: Float) -> Retangulo {
+        // Retorna um novo Retangulo — não muta o original
+        return Retangulo {
+            largura: self.largura * fator,
+            altura: self.altura * fator
+        }
+    }
+}
+```
+
+### Overloading de métodos
+
+Assim como funções globais, métodos em classes podem ser sobrecarregados:
+
+```soyuz
+class Usuario {
+    fn promover(self) { ... }
+    fn promover(self, nivel: Int) { ... }
+}
+```
+
+### Pattern matching em métodos
+
+Métodos também suportam pattern matching em parâmetros:
+
+```soyuz
+class Parser {
+    fn parsear(self, Some(token)) -> Result[Node] = self.parseToken(token)
+    fn parsear(self, None)        -> Result[Node] = Err(TokenEsperadoErro {})
+}
+```
+
+---
+
+## Sem herança — e por quê
+
+Soyuz deliberadamente **não tem herança**. Essa decisão tem razões concretas:
+
+**Herança cria acoplamento frágil.** Mudanças na classe pai quebram silenciosamente as filhas. Com interfaces, o contrato é explícito e estável.
+
+**Hierarquias profundas são difíceis de raciocinar.** Quando você lê `objeto.metodo()`, precisa navegar pela árvore de herança para entender o que executa. Com interfaces, você sabe exatamente qual classe implementa o quê.
+
+**Composição é mais flexível.** Se você precisa reutilizar comportamento, componha:
+
+```soyuz
+// Ao invés de herdar de Logger
+class ServicoDeUsuario : Persistivel {
+    val logger: Logger        // composição
+    val repositorio: UsuarioRepositorio   // composição
+
+    fn criar(self, dados: NovosUsuarioDados) -> Result[Usuario] {
+        self.logger.info("Criando usuário: $(dados.nome)")
+        return self.repositorio.salvar(dados)
+    }
+}
+```
+
+---
+
+## Classes genéricas
+
+```soyuz
+class Repositorio[T : Entidade] : Store[T] {
+    var items: List[T] = []
+
+    fn adicionar(self, item: T) -> Result[Unit] {
+        self.items.add(item)
+        return Ok(())
+    }
+
+    fn buscar(self, id: Int) -> Option[T] {
+        return self.items.find(fn(i: T) => i.id == id)
+    }
+
+    fn todos(self) -> List[T] {
+        return self.items
+    }
+}
+
+// Uso
+val repos = Repositorio[Usuario] { items: [] }
+```
+
+---
+
+## Múltiplas interfaces
+
+Uma classe pode implementar quantas interfaces forem necessárias:
+
+```soyuz
+class EventoAuditavel : Persistivel, Serializavel, Auditavel, Comparavel[EventoAuditavel] {
+    val id: Int
+    val tipo: String
+    val timestamp: Int
+    var processado: Bool
+
+    fn salvar(self) -> Result[Unit] { return Ok(()) }
+    fn deletar(self, id: Int) -> Result[Unit] { return Ok(()) }
+    fn toJson(self) -> String { return "{}" }
+    fn fromJson(json: String) -> Result[EventoAuditavel] { return Err(ParseErro { input: json }) }
+    fn log(self) -> String { return "Evento $(self.id): $(self.tipo)" }
+    fn comparar(self, outro: EventoAuditavel) -> Int {
+        if self.timestamp < outro.timestamp { return -1 }
+        if self.timestamp > outro.timestamp { return 1 }
+        return 0
+    }
+}
+```
+
+---
+
+## Diferença entre record e class
+
+| | `record` | `class` |
+|---|---|---|
+| Campos mutáveis | Nunca | `var` campos |
+| Métodos | Não | Sim |
+| Implementa interfaces | Não | Sim |
+| Passagem | Por referência readonly | Por referência |
+| Igualdade | Deep equality automática | Definida pela classe |
+| Uso típico | DTOs, dados puros | Serviços, entidades com comportamento |
+
+```soyuz
+// Record — dados puros, sem comportamento
+record EnderecoDTO {
+    rua: String
+    cidade: String
+    cep: String
+}
+
+// Class — entidade com comportamento e estado
+class Pedido : Persistivel {
+    val id: Int
+    var status: StatusPedido
+    var itens: List[Item]
+
+    fn confirmar(self) -> Result[Unit] {
+        if self.itens.isEmpty() {
+            return Err(PedidoVazioErro {})
+        }
+        self.status = StatusPedido.Confirmado
+        return Ok(())
+    }
+
+    fn salvar(self) -> Result[Unit] { return Ok(()) }
+}
+```

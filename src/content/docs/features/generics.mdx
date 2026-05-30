@@ -1,0 +1,154 @@
+---
+title: Genéricos
+description: Funções, classes e records genéricos com constraints em Soyuz.
+sidebar:
+  order: 9
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Genéricos permitem escrever código que funciona para múltiplos tipos sem perder as garantias do type checker. Em Soyuz, a sintaxe usa colchetes `[]`.
+
+---
+
+## Funções genéricas
+
+```soyuz
+fn identidade[T](x: T) -> T {
+    return x
+}
+
+fn primeiro[T](lista: List[T]) -> Option[T] {
+    return lista.first()
+}
+
+fn trocar[A, B](par: (A, B)) -> (B, A) {
+    val (a, b) = par
+    return (b, a)
+}
+```
+
+O compilador infere os tipos na chamada — você raramente precisa ser explícito:
+
+```soyuz
+val x = identidade(42)          // T = Int, inferido
+val y = identidade("oi")        // T = String, inferido
+val z = identidade[Bool](true)  // explícito quando necessário
+```
+
+---
+
+## Records genéricos
+
+```soyuz
+record Par[A, B] {
+    primeiro: A
+    segundo: B
+}
+
+val coords = Par[Int, Int] { primeiro: 10, segundo: 20 }
+val info = Par { primeiro: "nome", segundo: 42 }   // inferência
+```
+
+---
+
+## Classes genéricas
+
+```soyuz
+class Repositorio[T] {
+    var items: List[T] = []
+
+    fn adicionar(self, item: T) {
+        self.items.add(item)
+    }
+
+    fn buscar(self, predicado: (T) -> Bool) -> Option[T] {
+        return self.items.find(predicado)
+    }
+}
+
+val userRepo = Repositorio[Usuario] { items: [] }
+```
+
+---
+
+## Interfaces genéricas
+
+```soyuz
+interface Comparavel[T] {
+    fn comparar(self, outro: T) -> Int   // -1, 0, 1
+}
+
+interface Iteravel[T] {
+    fn proximo(self) -> Option[T]
+}
+```
+
+---
+
+## Constraints
+
+Constraints limitam quais tipos podem ser usados como parâmetro. A sintaxe é `T : Interface`:
+
+```soyuz
+fn ordenar[T : Comparavel[T]](lista: List[T]) -> List[T] {
+    // pode usar T.comparar porque T implementa Comparavel
+    return lista.sort(fn(a: T, b: T) => a.comparar(b))
+}
+```
+
+### Múltiplas constraints com `+`
+
+```soyuz
+fn processar[T : Persistivel + Serializavel](item: T) -> Result[String] {
+    val json = item.toJson()
+    item.salvar()
+    return json // auto-wrap Ok()
+}
+```
+
+### Constraints em classes
+
+```soyuz
+class Cache[T : Serializavel] {
+    var dados: Map[String, String] = [:]
+
+    fn armazenar(self, chave: String, valor: T) {
+        self.dados[chave] = valor.toJson()
+    }
+}
+```
+
+---
+
+## Monomorphization
+
+Soyuz usa **monomorphization** — para cada uso concreto de um genérico, o compilador gera código especializado. Isso significa:
+
+- Zero custo de abstração — sem boxing, sem despacho dinâmico.
+- Binários otimizados para cada tipo.
+- Erros de tipo em tempo de compilação, não em runtime.
+
+```soyuz
+// O compilador gera versões especializadas:
+val a = identidade(42)      // versão para Int
+val b = identidade("oi")    // versão para String
+```
+
+---
+
+## Enums genéricos
+
+```soyuz
+enum Arvore[T] {
+    Folha
+    No(valor: T, esq: Arvore[T], dir: Arvore[T])
+}
+
+fn profundidade[T](arvore: Arvore[T]) -> Int {
+    return match arvore {
+        Folha         => 0
+        No(_, e, d)   => 1 + max(profundidade(e), profundidade(d))
+    }
+}
+```

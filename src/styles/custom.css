@@ -1,0 +1,17 @@
+/* Soyuz docs — custom Starlight theme */
+:root {
+  --sl-color-accent-low: #1a2f4a;
+  --sl-color-accent: #3b82f6;
+  --sl-color-accent-high: #93c5fd;
+  --sl-color-white: #f8fafc;
+  --sl-color-gray-1: #e2e8f0;
+  --sl-color-gray-6: #0f172a;
+  --sl-font: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Code blocks — use monospace that matches the language aesthetic */
+code,
+pre {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.875rem;
+}

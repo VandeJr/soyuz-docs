@@ -1,0 +1,65 @@
+---
+title: Lexer
+description: Transformação de código fonte em tokens
+sidebar:
+  order: 3
+---
+
+O módulo `lexer` é a primeira fase da pipeline do compilador Soyuz. Ele lê o código fonte UTF-8 e o transforma em uma sequência de tokens que o parser pode processar. O lexer do Soyuz implementa funcionalidades modernas como interpolação de strings e inserção automática de ponto e vírgula.
+
+## Visão Geral do Módulo
+O lexer atua como uma máquina de estados que consome caracteres e emite tokens. Ele é projetado para ser eficiente e lidar corretamente com as nuances da gramática de Soyuz, especialmente no que diz respeito ao controle de fluxo e à estrutura de blocos.
+
+### Como Implementar o Lexer em Soyuz
+Para implementar o lexer em Soyuz Lang, utilizaríamos a classe `Lexer` com métodos para escanear diferentes tipos de literais e operadores. A utilização de `match` seria ideal para despachar o processamento com base no caractere atual.
+
+```soyuz
+pub class Lexer {
+    var source: String
+    var pos: Int
+    
+    pub fn nextToken(self) -> Token {
+        match self.currentChar() {
+            ' ' | '\t' => self.skipWhitespace()
+            '\n' => self.handleNewline()
+            '"' => self.readString()
+            c when isLetter(c) => self.readIdentifier()
+            c when isDigit(c) => self.readNumber()
+            _ => self.readOperator()
+        }
+    }
+}
+```
+
+---
+
+## Arquivos do Módulo
+
+### `tokens.go`
+**O que faz:** Define a base léxica da linguagem. Contém a definição do tipo `TokenType` (um enum de inteiros), a estrutura `Position` para rastreamento de erros e a struct `Token` que encapsula o tipo, o valor textual (lexeme) e a localização no fonte.
+**Onde é chamado:** Referenciado por todos os arquivos do lexer, parser, checker e LSP para identificar e manipular símbolos da linguagem.
+**Como é usado:** Fornece constantes para todas as palavras-chave, operadores e literais. Inclui a função `CanInsertSemicolon` que determina se um token permite a inserção de um `;` virtual na linha seguinte.
+**Principais Assinaturas:**
+- `type TokenType int`
+- `type Position struct { Line int; Column int }`
+- `type Token struct { Type TokenType; Lexeme string; Position Position }`
+- `func CanInsertSemicolon(t TokenType) bool`
+
+### `keywords.go`
+**O que faz:** Mantém o mapeamento entre identificadores textuais e tipos de tokens de palavras-chave.
+**Onde é chamado:** Invocado pelo `lexer.go` sempre que um identificador é lido para verificar se ele é uma palavra reservada.
+**Como é usado:** Através da função `LookupIdent`, que diferencia nomes de variáveis/funções de comandos da linguagem como `fn`, `val`, `match`, etc.
+**Principais Assinaturas:**
+- `var keywords map[string]TokenType`
+- `func LookupIdent(ident string) TokenType`
+
+### `lexer.go`
+**O que faz:** Implementa a lógica principal de tokenização. Gerencia o estado de leitura, a profundidade de parênteses durante interpolações e a lógica de inserção de semicolons.
+**Onde é chamado:** Ponto de entrada principal da pipeline léxica, chamado pelo `parser` e pelo `module resolver`.
+**Como é usado:** A função `Tokenize` lê todo o arquivo de uma vez (útil para testes), enquanto o `NextToken` é usado pelo parser para um consumo sob demanda e eficiente em termos de memória.
+**Principais Assinaturas:**
+- `func NewLexer(input string) *Lexer`
+- `func (l *Lexer) NextToken() Token`
+- `func (l *Lexer) Tokenize(input string) []Token`
+- `func (l *Lexer) readString(pos Position, isContinuation bool) Token`
+- `func (l *Lexer) skipWhitespace()`

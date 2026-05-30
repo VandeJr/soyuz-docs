@@ -1,0 +1,206 @@
+---
+title: Funções
+description: Declaração de funções, overloading com guards e parâmetros default em Soyuz.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Funções são declaradas com a keyword `fn`. São cidadãos de primeira classe — podem ser passadas como valores e retornadas por outras funções.
+
+---
+
+## Declaração básica
+
+```soyuz
+fn soma(a: Int, b: Int) -> Int {
+    return a + b
+}
+```
+
+O tipo de retorno vem após `->`. Quando a função não retorna nada útil, o tipo é `Unit` (ou omitido):
+
+```soyuz
+fn log(msg: String) {
+    print(msg)
+}
+```
+
+### Corpo de expressão única
+
+Funções simples podem usar `=` como açúcar para `return`:
+
+```soyuz
+fn dobrar(x: Int) -> Int = x * 2
+fn saudacao(nome: String) -> String = "Olá, $(nome)!"
+```
+
+---
+
+## Retorno
+
+Soyuz **não tem retorno implícito**. O `return` é sempre obrigatório em blocos `{}`:
+
+```soyuz
+fn soma(a: Int, b: Int) -> Int {
+    return a + b   // obrigatório
+}
+
+// A única exceção é o corpo de expressão com =
+fn soma(a: Int, b: Int) -> Int = a + b   // = é açúcar para return
+```
+
+### Retorno múltiplo com tupla
+
+```soyuz
+fn dividirComResto(a: Int, b: Int) -> (Int, Int) {
+    return (a / b, a % b)
+}
+
+val (quociente, resto) = dividirComResto(17, 5)
+```
+
+---
+
+## Parâmetros
+
+### Anotação de tipo
+
+Parâmetros sempre precisam de tipo anotado:
+
+```soyuz
+fn area(largura: Float, altura: Float) -> Float {
+    return largura * altura
+}
+```
+
+### Parâmetros Default
+
+Parâmetros podem ter valores padrão, que são usados se o argumento for omitido na chamada:
+
+```soyuz
+fn registrar(nome: String, cargo: String = "Desenvolvedor") {
+    print("Registrando $(nome) como $(cargo)")
+}
+
+registrar("Vand")               // cargo = "Desenvolvedor"
+registrar("Lucas", "Gerente")    // cargo = "Gerente"
+```
+
+### `self` — métodos
+
+Métodos em `class` recebem `self` como primeiro parâmetro:
+
+```soyuz
+class Contador {
+    var count: Int = 0
+
+    fn incrementar(self) {
+        self.count = self.count + 1
+    }
+}
+```
+
+---
+
+## Overloading e `when` guards
+
+Soyuz permite definir múltiplas versões de uma mesma função usando a keyword `when`. O compilador escolherá a definição correta baseada no predicado:
+
+```soyuz
+fn fatorial(n: Int) when n == 0 = 1
+fn fatorial(n: Int) = n * fatorial(n - 1)
+```
+
+### Regras de despacho
+
+1.  **Ordem de Avaliação**: O compilador testa as definições com `when` na ordem em que foram declaradas.
+2.  **Variante Catch-all**: É obrigatório fornecer uma implementação final sem o `when` guard para garantir que a função sempre possa ser executada.
+
+---
+
+## Funções de primeira classe
+
+Funções podem ser passadas como argumentos e retornadas:
+
+```soyuz
+// Passada como argumento
+fn aplicar(f: (Int) -> Int, x: Int) -> Int {
+    return f(x)
+}
+
+val resultado = aplicar(dobrar, 5)   // 10
+
+// Retornada por outra função
+fn multiplicador(fator: Int) -> (Int) -> Int {
+    return fn(x: Int) => x * fator
+}
+
+val triplicar = multiplicador(3)
+triplicar(4)   // 12
+```
+
+---
+
+## Funções anônimas (arrow functions)
+
+A sintaxe é `fn(params) => corpo`:
+
+```soyuz
+val pares = [1, 2, 3, 4, 5].filter(fn(x: Int) => x % 2 == 0)
+```
+
+<Aside type="note">
+A linguagem não suporta mais a sintaxe `val nome = fn(...)`. Todas as funções nomeadas devem ser declaradas com `fn nome(...)`.
+</Aside>
+
+---
+
+## Aplicação Parcial (Partial Application)
+
+Você pode criar uma nova função fixando alguns argumentos de uma função existente usando o caractere `_`:
+
+```soyuz
+fn multiplicar(x: Int, y: Int) -> Int = x * y
+
+val dobrar = multiplicar(2, _)    // (Int) -> Int
+val triplicar = multiplicar(3, _) // (Int) -> Int
+
+dobrar(10)     // 20
+triplicar(10)  // 30
+```
+
+---
+
+## Genéricos em funções
+
+```soyuz
+fn identidade[T](x: T) -> T {
+    return x
+}
+
+fn primeiro[T](lista: List[T]) -> Option[T] {
+    return lista.first()
+}
+```
+
+### Com constraints
+
+```soyuz
+fn maior[T : Comparable](a: T, b: T) -> T {
+    if a > b { return a }
+    return b
+}
+```
+
+---
+
+## Visibilidade
+
+Por padrão, funções são privadas ao módulo. Use `pub` para exportar:
+
+```soyuz
+pub fn exportada(x: Int) -> Int = x * 2   // visível para outros módulos
+fn interna(x: Int) -> Int = x + 1         // só neste arquivo
+```

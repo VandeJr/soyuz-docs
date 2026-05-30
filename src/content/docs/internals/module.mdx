@@ -1,0 +1,55 @@
+---
+title: Módulos e Imports
+description: Resolução de dependências e gerenciamento de pacotes
+sidebar:
+  order: 7
+---
+
+O sistema de módulos do Soyuz gerencia a descoberta de arquivos, a resolução de caminhos de importação e a ordem de compilação necessária para satisfazer as dependências entre diferentes arquivos `.sy`.
+
+## Visão Geral do Módulo
+Diferente de linguagens que compilam cada arquivo isoladamente, o Soyuz analisa o grafo de dependências completo. Isso permite que o compilador ordene os arquivos de modo que as definições de um módulo estejam disponíveis para quem as utiliza, facilitando a verificação de tipos global e o suporte a aliases de pacotes.
+
+### Como Implementar Módulos em Soyuz
+Em uma implementação self-hosted, o gerenciamento de módulos envolveria a manipulação de caminhos de sistema de arquivos e a construção de um grafo direcionado.
+
+```soyuz
+pub class ModuleResolver {
+    var projectRoot: String
+    var packages: Map[String, String]
+
+    pub fn resolve(self, importPath: String) -> Result[List[String]] {
+        // Lógica para mapear @std ou caminhos relativos
+    }
+}
+```
+
+---
+
+## Arquivos do Módulo
+
+### `project.go`
+**O que faz:** Responsável pela descoberta da raiz do projeto e leitura das configurações. Ele busca pelos marcadores `.soyuz-root` ou `soyuz.toml` subindo a árvore de diretórios.
+**Onde é chamado:** Iniciado logo no começo do processo de compilação pelo entrypoint principal.
+**Como é usado:** Extrai a seção `[packages]` do arquivo de configuração para permitir o uso de aliases como `import { ... } from @meu_pacote/util`.
+**Principais Assinaturas:**
+- `func FindProjectRoot(startDir string) (string, error)`
+- `func LoadProjectConfig(entryFile string) (*ProjectConfig, error)`
+- `func (c *ProjectConfig) ResolveAliasPath(alias string, rest []string) ([]string, error)`
+
+### `resolver.go`
+**O que faz:** Traduz as strings de importação em caminhos absolutos no sistema de arquivos. Lida com quatro tipos de caminhos: stdlib (`@soyuz/`), raiz do projeto (`/`), aliases de pacotes e caminhos relativos.
+**Onde é chamado:** Chamado recursivamente durante a fase de coleta de arquivos (`Collect`).
+**Como é usado:** Verifica se um import aponta para um arquivo único `.sy` ou para um diretório inteiro (importando todos os arquivos `.sy` dentro dele).
+**Principais Assinaturas:**
+- `func (r *Resolver) Resolve(imp *parser.ImportDecl) ([]string, error)`
+- `func (r *Resolver) resolveIn(base string, path []string) ([]string, error)`
+- `func (r *Resolver) readDirSy(basePath string) ([]string, error)`
+
+### `graph.go`
+**O que faz:** Constrói e ordena o grafo de dependências do programa. Ele garante que a biblioteca padrão (`prelude`) seja o primeiro item da lista de compilação.
+**Onde é chamado:** No `cmd/main.go`, antes de iniciar a análise sintática e semântica.
+**Como é usado:** Utiliza uma busca em profundidade (DFS) para realizar a ordenação topológica. Se houver um ciclo de imports (A importa B que importa A), ele aborta com um erro detalhado.
+**Principais Assinaturas:**
+- `func Collect(entryFile string, resolver *Resolver) ([]string, error)`
+- `func ResolvePrelude(resolver *Resolver) ([]string, error)`

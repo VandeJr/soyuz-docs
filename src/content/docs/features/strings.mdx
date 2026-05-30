@@ -1,0 +1,101 @@
+---
+title: Strings e StringBuilder
+description: Métodos da classe String e uso da classe StringBuilder para construção eficiente de textos.
+sidebar:
+  order: 13
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Strings em Soyuz são imutáveis e representam sequências de caracteres UTF-8. Para manipulação pesada ou construção dinâmica, a linguagem fornece a classe `StringBuilder`.
+
+---
+
+## Métodos de String
+
+Muitos métodos de string são adicionados via extensões na biblioteca padrão. Aqui estão os principais:
+
+### Medição e Busca
+
+- `.len() -> Int`: Retorna o número de caracteres na string.
+- `.isEmpty() -> Bool`: Verdadeiro se o tamanho for zero.
+- `.indexOf(sub: String) -> Option[Int]`: Retorna o índice da primeira ocorrência de `sub`.
+- `.lastIndexOf(sub: String) -> Option[Int]`: Retorna o índice da última ocorrência de `sub`.
+- `.contains(sub: String) -> Bool`: Verifica se a string contém `sub`.
+
+### Transformação
+
+- `.toUpper() -> String`: Converte para maiúsculas.
+- `.toLower() -> String`: Converte para minúsculas.
+- `.trim() -> String`: Remove espaços em branco nas extremidades.
+- `.substring(start: Int, end: Int) -> String`: Extrai uma fatia da string.
+- `.replace(from: String, to: String) -> String`: Substitui ocorrências de texto.
+- `.split(delimiter: String) -> List[String]`: Divide a string em uma lista.
+
+### Acesso a Dados
+
+- `.byteAt(index: Int) -> Option[Int]`: Retorna o byte na posição dada.
+- `.unicodeAt(index: Int) -> Option[Char]`: Retorna o caractere Unicode lógico na posição dada.
+
+### Conversão
+
+- `.toInt() -> Result[Int]`: Tenta converter a string para um inteiro.
+- `.toFloat() -> Result[Float]`: Tenta converter a string para um número de ponto flutuante.
+
+```soyuz
+val s = " 123 "
+val n = s.trim().toInt() // Ok(123)
+```
+
+---
+
+## StringBuilder
+
+Como as strings são imutáveis, concatená-las em um loop (ex: `s = s + "novo"`) é ineficiente. Use `StringBuilder` para construir strings dinamicamente.
+
+### Exemplo de uso
+
+```soyuz
+import (
+    { StringBuilder } from @soyuz/string
+)
+
+fn gerarLista(itens: List[String]) -> String {
+    val builder = StringBuilder { _data: "" }
+
+    for item in itens {
+        builder.appendLine("- $(item)")
+    }
+
+    return builder.build()
+}
+```
+
+### Métodos do StringBuilder
+
+- `.append(s: String)`: Adiciona texto ao final.
+- `.appendLine(s: String)`: Adiciona texto seguido de uma quebra de linha.
+- `.build() -> String`: Retorna a string final acumulada.
+- `.clear()`: Limpa todo o conteúdo acumulado.
+- `.len() -> Int`: Retorna o tamanho atual do conteúdo.
+- `.isEmpty() -> Bool`: Verifica se o builder está vazio.
+
+---
+
+## Interpolação e Escape
+
+Soyuz suporta interpolação poderosa com `$()`:
+
+```soyuz
+val nome = "Vand"
+val idade = 28
+print("Nome: $(nome), Dobro da idade: $(idade * 2)")
+```
+
+### Raw Strings
+
+Use o prefixo `r` para strings onde caracteres de escape (como `\n`) devem ser tratados como texto puro:
+
+```soyuz
+val path = r"C:\arquivos\projeto" // \a não será interpretado como escape
+```

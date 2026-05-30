@@ -1,0 +1,154 @@
+---
+title: Variáveis
+description: val e var — imutabilidade, mutabilidade e shadowing em Soyuz.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Soyuz tem duas formas de declarar um binding:
+
+| Keyword | Mutável | Redeclarável | Uso |
+|---|---|---|---|
+| `val` | Não | Sim (tipo diferente) | Caso padrão |
+| `var` | Sim | Sim | Estado que muda |
+
+---
+
+## `val` — imutável
+
+`val` declara um binding imutável. Após a atribuição inicial, o valor não pode ser alterado.
+
+```soyuz
+val nome = "Soyuz"
+val versao: Int = 1
+```
+
+O tipo pode ser inferido (`:` é opcional quando o compilador consegue deduzir):
+
+```soyuz
+val x = 42         // Int inferido
+val pi = 3.14      // Float inferido
+val ok = true      // Bool inferido
+```
+
+### Shadowing com `val`
+
+`val` pode ser redeclarado no mesmo escopo, desde que o **tipo seja diferente**. Isso é chamado de shadowing.
+
+```soyuz
+val x: Int = 10
+val x: String = "dez"  // OK — tipo diferente, shadowing legítimo
+```
+
+```soyuz
+val x: Int = 10
+val x: Int = 20   // ERRO — mesmo tipo, use var se quer mutabilidade
+```
+
+<Aside type="tip">
+A regra do shadowing é um "are you sure?" do compilador. Se você está redeclarando com o mesmo tipo, provavelmente quer `var`. Se está redeclarando com tipo diferente, é uma transformação legítima do mesmo nome.
+</Aside>
+
+---
+
+## `var` — mutável
+
+`var` declara um binding mutável. O valor pode ser reatribuído a qualquer momento.
+
+```soyuz
+var contador = 0
+contador = contador + 1   // OK
+contador = 42             // OK
+```
+
+O tipo é fixo após a declaração — você não pode reatribuir com um tipo diferente:
+
+```soyuz
+var x = 10
+x = "texto"   // ERRO — x é Int, não String
+```
+
+### Quando usar `var`
+
+Use `var` apenas quando o estado precisa realmente mudar ao longo do tempo. Exemplos típicos:
+
+```soyuz
+// Acumulador em loop
+var total = 0.0
+for preco in precos {
+    total = total + preco
+}
+
+// Campo de class que muda
+class Contador {
+    var count: Int = 0
+
+    fn incrementar(self) {
+        self.count = self.count + 1
+    }
+}
+```
+
+---
+
+## Inferência de tipos
+
+Em ambos os casos, o compilador infere o tipo quando há uma expressão inicial clara:
+
+```soyuz
+val a = 10           // Int
+val b = 3.14         // Float
+val c = true         // Bool
+val d = "texto"      // String
+val e = (1, "oi")    // (Int, String)
+val f = [1, 2, 3]    // List[Int]
+```
+
+Você pode sempre anotar o tipo explicitamente para clareza ou para resolver ambiguidades:
+
+```soyuz
+val x: Float = 10    // sem a anotação, seria Int
+val lista: List[Int] = []
+```
+
+---
+
+## Escopo
+
+Variáveis existem no bloco em que foram declaradas. Blocos são delimitados por `{}`:
+
+```soyuz
+fn exemplo() {
+    val x = 10
+
+    if true {
+        val y = 20    // y só existe aqui
+        val x = "sombra"  // shadowing — tipo diferente é OK
+    }
+
+    // y não existe aqui
+    // x aqui ainda é o Int 10
+}
+```
+
+---
+
+## Resumo
+
+```soyuz
+// Imutável, tipo inferido
+val nome = "Soyuz"
+
+// Imutável, tipo explícito
+val versao: Int = 1
+
+// Shadowing legítimo — tipo diferente
+val id: Int = 42
+val id: String = "USR-42"
+
+// Mutável
+var contador = 0
+contador = contador + 1
+```

@@ -1,0 +1,22 @@
+---
+title: Visão Geral da Arquitetura
+description: Como o compilador Soyuz funciona por baixo dos panos.
+sidebar:
+  order: 1
+---
+
+O compilador Soyuz é escrito em Go e segue uma arquitetura modular clássica, mas otimizada para integração direta com o LSP.
+
+## Pipeline do Compilador
+
+O fluxo de compilação segue estas etapas:
+
+1. **Lexer & Parser:** Transforma o código fonte em uma AST (Abstract Syntax Tree).
+2. **Checker (Type System):** Valida tipos, resolve símbolos e realiza inferência.
+3. **Module Resolver:** Gerencia dependências entre arquivos e a biblioteca padrão.
+4. **Codegen (LLVM):** Transforma a AST validada em LLVM IR.
+5. **Runtime:** Biblioteca em C que fornece suporte a paralelismo e memória.
+
+## Compartilhamento com LSP
+
+Diferente de compiladores tradicionais, o `checker` e o `parser` são projetados para serem resilientes a erros, permitindo que o LSP forneça diagnósticos e sugestões mesmo em código incompleto.

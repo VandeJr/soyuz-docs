@@ -1,0 +1,62 @@
+---
+title: Melhorias de Performance
+description: Investigação de gargalos e propostas de otimização para Soyuz Lang.
+sidebar:
+  order: 13
+---
+
+Este documento analisa o estado atual do compilador e do runtime do Soyuz, identificando áreas críticas que impactam a performance de execução e compilação, e propondo caminhos para otimização.
+
+## 1. Geração de Código e LLVM
+
+Atualmente, o Soyuz gera LLVM IR textual e invoca o `clang` para a geração do binário final.
+
+### Gargalos Identificados
+- **Invocação Externa**: Chamar o binário `clang` em cada build introduz um overhead de processo significativo, especialmente para arquivos pequenos.
+- **Falta de Otimização**: O comando `clang` é invocado sem flags de otimização explícitas (como `-O2` ou `-O3`).
+- **IR Textual**: Escrever e ler o `.ll` do disco é mais lento do que manipular o Bitcode em memória.
+
+### Propostas
+- **Integração com LLVM API**: Utilizar bibliotecas de binding que permitam rodar os passes de otimização do LLVM diretamente em memória.
+- **Clang Flags**: Passar `-O3` e `-flto` (Link Time Optimization) por padrão em builds de release.
+- **Escape Analysis**: Implementar análise de escape no compilador para alocar variáveis na stack sempre que possível, reduzindo a pressão sobre o gerenciador de memória (ARC).
+
+## 2. Gerenciamento de Memória (ARC/ORC)
+
+O Soyuz utiliza Reference Counting Automático (ARC) com um Cycle Collector (ORC) para lidar com referências circulares.
+
+### Gargalos Identificados
+- **Incrementos Atômicos**: O `soyuz_retain` e `soyuz_release` usam operações atômicas mesmo quando o objeto não é compartilhado entre threads (não está dentro de um `Arc[T]`).
+- **Coleta de Ciclos**: O coletor de ciclos (`soyuz_orc_collect`) percorre o registro global de objetos, o que pode causar pausas perceptíveis se houver muitos objetos registrados.
+- **Boxing de Primitivos**: Tipos como `Option[T]` e `Result[T]` atualmente forçam a alocação na heap (72 bytes por instância), o que é ineficiente para valores pequenos.
+
+### Propostas
+- **ARC Local vs Global**: Distinguir entre objetos locais à task e objetos compartilhados (`Arc`). Operações em objetos locais não precisam ser atômicas.
+- **Small Value Optimization (SVO)**: Implementar enums `Option` e `Result` de forma "unboxed" ou via "tagged pointers" para tipos pequenos (como `Int` e `Bool`), evitando alocações na heap.
+- **Gerenciamento por Regiões**: Utilizar alocadores de arena para tarefas de curta duração, liberando toda a memória da arena de uma vez ao fim da task.
+
+## 3. Runtime e Scheduler
+
+O runtime M:N utiliza `ucontext` para corotinas e um scheduler de work-stealing.
+
+### Gargalos Identificados
+- **Synchronization Overhead**: Primitivas como `Channel` e `Mutex` ainda utilizam `pthread_mutex` e `pthread_cond` internamente, o que pode bloquear a thread do sistema (carrier) em vez de apenas suspender a task.
+- **ucontext Performance**: `getcontext` e `setcontext` salvam e restauram o estado completo dos registradores, incluindo a máscara de sinais, o que é custoso.
+- **Tráfego de Deque**: No work-stealing, threads roubam da `top` da deque alheia com operações atômicas. Se as deques forem pequenas, a contenção aumenta.
+
+### Propostas
+- **Lock-free Primitives**: Migrar canais e travas para implementações lock-free que utilizam o scheduler de forma cooperativa (`yield`/`resume`) em vez de bloqueios de SO.
+- **Custom Fiber Switching**: Implementar troca de contexto em assembly minimalista (apenas registradores callee-saved), similar ao que o Go ou o Boost.Context fazem, ignorando sinais do SO.
+- **Batch Stealing**: Em vez de roubar apenas uma task por vez, roubar metade da deque de um peer para reduzir a frequência de tentativas de roubo.
+
+## 4. Pipeline do Compilador
+
+O front-end (Lexer/Parser) é escrito em Go com foco em resiliência para o LSP.
+
+### Gargalos Identificados
+- **Multi-pass redundant**: O checker realiza diversas passagens sobre a AST. Algumas dessas informações poderiam ser coletadas de forma mais eficiente em uma única travessia.
+- **Extração de Stdlib**: Em cada build, o compilador extrai a biblioteca padrão para o `/tmp`.
+
+### Propostas
+- **Cache de Pré-compilação**: Cachear o LLVM IR/Bitcode da biblioteca padrão e de módulos não alterados.
+- **Incremental Checking**: No LSP, re-checar apenas o escopo afetado pela mudança em vez do arquivo ou projeto inteiro.

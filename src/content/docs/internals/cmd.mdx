@@ -1,0 +1,40 @@
+---
+title: Entrypoints
+description: Comandos e ferramentas de linha de comando
+sidebar:
+  order: 2
+---
+
+O diretório `cmd/` contém os pontos de entrada para o binário principal do compilador e para as diversas ferramentas de suporte e depuração.
+
+## Visão Geral do Módulo
+Cada subdiretório em `cmd/` representa um binário independente ou uma funcionalidade de alto nível do ecossistema Soyuz. O binário principal (`soyuz`) orquestra toda a pipeline de compilação, enquanto ferramentas como `lsp` e `diag` provêm infraestrutura para desenvolvedores.
+
+---
+
+## Arquivos do Módulo
+
+### `cmd/main.go`
+**O que faz:** Implementa o comando principal `soyuz build`. Ele orquestra todas as fases: extração do runtime/stdlib, resolução de módulos, parse, check, codegen e a invocação final do `clang`.
+**Como é usado:** Através do comando `soyuz build -o meu_app main.sy`. Ele cria diretórios temporários para trabalhar e limpa tudo ao finalizar.
+**Principais Assinaturas:**
+- `func main()`
+- `func build(inputFile, outputFile string)`
+
+### `cmd/lsp/main.go`
+**O que faz:** Inicia o servidor de linguagem (Language Server Protocol).
+**Como é usado:** Chamado pelo editor de texto (como VSCode ou Neovim). Ele utiliza a biblioteca `glsp` para se comunicar via stdio. Configura o log para ser silencioso no stderr para evitar conflitos com a captura de logs dos editores.
+**Principais Assinaturas:**
+- `func main()`
+
+### `cmd/diag/main.go`
+**O que faz:** Uma ferramenta de diagnóstico de performance do compilador.
+**Como é usado:** Roda a pipeline completa e imprime no stderr timestamps detalhados de quando cada fase (`resolve`, `parse`, `check`, `codegen`) começou e terminou.
+**Principais Assinaturas:**
+- `func phase(name string, fn func() error)`
+
+### `cmd/dumpir/main.go`
+**O que faz:** Ferramenta utilitária para inspecionar o LLVM IR gerado para um snippet de código fixo.
+**Como é usado:** Útil para desenvolvedores do compilador que precisam verificar rapidamente se uma mudança no `codegen` está produzindo o IR esperado sem precisar rodar um build completo de arquivo.
+**Principais Assinaturas:**
+- `func main()`

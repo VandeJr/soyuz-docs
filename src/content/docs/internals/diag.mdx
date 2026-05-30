@@ -1,0 +1,46 @@
+---
+title: Diagnósticos
+description: Sistema unificado de erros e avisos
+sidebar:
+  order: 8
+---
+
+O módulo `diag` fornece uma estrutura comum para reportar problemas encontrados em qualquer fase da compilação. Ele unifica erros de sintaxe (Parser) e erros de tipo (Checker) em um formato que pode ser facilmente consumido tanto pela CLI quanto pelo servidor LSP.
+
+## Visão Geral do Módulo
+A arquitetura de diagnósticos do Soyuz é baseada na ideia de que um erro deve ser informativo e preciso. Cada diagnóstico contém a localização exata (arquivo, linha, coluna), a gravidade (Erro ou Aviso), um código único e a mensagem descritiva.
+
+### Como Implementar Diagnósticos em Soyuz
+Em Soyuz, poderíamos usar um `enum` para a severidade e um `record` para a estrutura do diagnóstico.
+
+```soyuz
+pub enum Severity {
+    Error,
+    Warning
+}
+
+pub record Diagnostic {
+    file: String,
+    start: Position,
+    end: Position,
+    severity: Severity,
+    code: String,
+    message: String
+}
+```
+
+---
+
+## Arquivos do Módulo
+
+### `diag.go`
+**O que faz:** Define a estrutura `Diagnostic` e funções utilitárias para converter erros específicos de fase para o formato unificado.
+**Onde é chamado:** Utilizado pelo `cmd/main.go` para imprimir erros no terminal e pelo `internal/lsp/engine.go` para enviar notificações ao editor.
+**Como é usado:** As funções `FromParseErrors`, `FromTypeErrors` e `FromTypeWarnings` mapeiam as estruturas internas do parser e do checker para a lista de diagnósticos global. Ele também gerencia o cálculo automático do "range" (início e fim) do erro caso o fim não tenha sido especificado.
+**Principais Assinaturas:**
+- `type Diagnostic struct`
+- `func FromParseErrors(file string, errs []parser.ParseError) []Diagnostic`
+- `func FromTypeErrors(errs []checker.TypeError) []Diagnostic`
+- `func FromTypeWarnings(warns []checker.TypeWarning) []Diagnostic`
+- `func Merge(all ...[]Diagnostic) []Diagnostic`
+- `func SpanEnd(start lexer.Position, width int) lexer.Position`

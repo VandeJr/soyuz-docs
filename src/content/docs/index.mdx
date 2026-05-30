@@ -1,40 +1,141 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash # Remove or comment out this line to display the site sidebar on this page.
-hero:
-  tagline: Congrats on setting up a new Starlight project!
-  image:
-    file: ../../assets/houston.webp
-  actions:
-    - text: Example Guide
-      link: /guides/example/
-      icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
-      icon: external
-      variant: minimal
+title: Introdução ao Soyuz
+description: Visão geral da linguagem Soyuz — objetivos, filosofia e características principais.
+sidebar:
+  order: 1
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Aside, Badge, Card, CardGrid } from '@astrojs/starlight/components';
 
-## Next steps
+**Soyuz** é uma linguagem de programação compilada, de propósito geral, projetada para ser expressiva, segura e pragmática. Ela compila para binários nativos via LLVM e abraça um estilo **multiparadigma** — combinando o melhor da programação orientada a objetos e funcional.
 
-<CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
-	</Card>
-	<Card title="Change page layout" icon="document">
-		Delete `template: splash` in `src/content/docs/index.mdx` to display a
-		sidebar on this page.
-	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
-	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
-	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
-	</Card>
+A extensão dos arquivos fonte é `.sy`.
+
+---
+
+## Filosofia
+
+Soyuz foca na legibilidade do código e segurança em tempo de compilação:
+
+**Imutabilidade como padrão.**
+Variáveis imutáveis (`val`) são o caso comum. Mutabilidade (`var`) precisa ser declarada explicitamente. Não existe `const`; `val` é poderoso o suficiente para todos os casos de imutabilidade.
+
+**Erros são valores.**
+Não há `try/catch`. Erros são representados pelo tipo `Result[T]` e tratados com pattern matching ou PipeQuest (`|?>`). O compilador garante que você trate as falhas, e o **auto-wrapping** torna o código limpo.
+
+**Extensível, não hierárquico.**
+Sem herança de classes. Use **interfaces** para contratos e **extensões (`extend`)** para adicionar comportamento a tipos existentes, mantendo o sistema desacoplado e flexível.
+
+**Gerenciamento de memória automático.**
+Soyuz usa um garbage collector transparente, permitindo que você foque na lógica do seu domínio enquanto o runtime cuida da alocação.
+
+---
+
+## Características em destaque
+
+<CardGrid>
+  <Card title="Call Sugar & Auto-wrapping" icon="star">
+    `Result` e `Option` são facilitados: retorne o valor puro e o Soyuz o envolve em `Ok()` ou `Some()` automaticamente.
+  </Card>
+  <Card title="PipeQuest |?>" icon="right-arrow">
+    O operador `|?>` integra `Option` e `Result` perfeitamente, curto-circuitando falhas e facilitando o encadeamento funcional seguro.
+  </Card>
+  <Card title="Extensões (extend)" icon="puzzle">
+    Adicione métodos a qualquer tipo (`class` ou primitivo), sem precisar de herança ou wrappers complexos.
+  </Card>
+  <Card title="Overloading & When Guards" icon="approve-check">
+    Crie funções poderosas com despacho baseado em predicados (`when`), tornando o código declarativo e exaustivo.
+  </Card>
+  <Card title="Aplicação Parcial" icon="list-format">
+    Use o placeholder `_` para criar novas funções fixando argumentos, facilitando o uso de funções de alta ordem.
+  </Card>
+  <Card title="Compilado para nativo" icon="rocket">
+    Backend LLVM gera binários nativos de alta performance para a sua plataforma.
+  </Card>
 </CardGrid>
+
+---
+
+## Exemplo rápido
+
+```soyuz
+import (
+    { List, Map } from @soyuz/collections
+    { Error } from @soyuz/prelude
+)
+
+record Produto {
+    id: Int
+    nome: String
+    preco: Float
+}
+
+interface Estoque {
+    fn adicionar(self, p: Produto) -> Result[Unit]
+    fn buscar(self, id: Int) -> Produto?
+}
+
+class LojaVirtual : Estoque {
+    var produtos: List[Produto] = []
+
+    // Overloading com when guard
+    fn adicionar(self, p: Produto) -> Result[Unit] {
+        if self.buscar(p.id).isSome() {
+            return noneError("Produto já existe") // Auto-wrapped em Err()
+        }
+        self.produtos.add(p)
+        return () // Auto-wrapped em Ok(Unit)
+    }
+
+    fn buscar(self, id: Int) -> Produto? {
+        return self.produtos.find(fn(p) => p.id == id)
+    }
+
+    fn totalEstoque(self) -> Float {
+        // Uso de partial application (_) e pipes
+        return self.produtos
+            |> map(_.preco)
+            |> reduce(fn(acc, v) => acc + v, 0.0)
+    }
+}
+
+fn main() {
+    val loja = LojaVirtual { produtos: [] }
+    val prod = Produto { id: 1, nome: "Teclado", preco: 250.0 }
+
+    match loja.adicionar(prod) {
+        Ok(_) => print("Sucesso!")
+        Err(e) => print("Erro: $(e.message())")
+    }
+}
+```
+
+---
+
+## Influências
+
+Soyuz é influenciada pelas seguintes linguagens:
+
+| Influência | O que foi inspirado |
+|---|---|
+| **Kotlin** | Sintaxe geral, null safety, extensões e parâmetros default |
+| **Rust** | Pattern matching robusto, erros como valores e sem herança |
+| **Haskell** | Pattern matching em parâmetros de função e ADTs |
+| **Go** | Simplicidade e sistema de módulos pragmático |
+| **Dart** | Interpolação de strings e operadores safe navigation |
+| **F# / Elixir** | Estilo funcional com piping (`\|>`) |
+
+---
+
+## Primeiros Passos
+
+```bash
+# Compilar seu programa
+soyuz build main.sy
+
+# Executar diretamente
+soyuz run main.sy
+
+# Apenas checagem de tipos
+soyuz check main.sy
+```
