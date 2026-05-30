@@ -1,0 +1,244 @@
+---
+title: CLI do Soyuz
+description: Referência completa dos comandos soyuz new, build e run — criação de projetos, compilação e execução.
+sidebar:
+  order: 0
+---
+
+import { FileTree, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+O Soyuz vem com um toolchain integrado: um único binário `soyuz` cobre a criação de projetos, compilação e execução.
+
+---
+
+## Instalação
+
+### Binário pré-compilado (Linux x64)
+
+Baixe o `soyuz-linux-x64` na página de [Releases](https://github.com/VandeJr/soyuz/releases) e mova para o PATH:
+
+```sh
+chmod +x soyuz-linux-x64
+sudo mv soyuz-linux-x64 /usr/local/bin/soyuz
+```
+
+### Build da source
+
+```sh
+git clone https://github.com/VandeJr/soyuz
+cd soyuz
+make build    # gera ./soyuz e ./soyuz-lsp
+make install  # instala em ~/.local/bin por padrão
+```
+
+<Aside type="caution">
+O Soyuz utiliza **Clang** para a fase de linkagem. Instale antes de compilar qualquer programa:
+
+```sh
+# Ubuntu / Debian
+sudo apt install clang
+
+# Arch Linux
+sudo pacman -S clang
+```
+</Aside>
+
+---
+
+## soyuz new
+
+Cria um projeto Soyuz com a estrutura mínima necessária.
+
+```sh
+soyuz new <nome>         # projeto binário (executável)
+soyuz new --lib <nome>   # projeto biblioteca
+```
+
+**Projeto binário** — gera:
+
+<FileTree>
+- hello/
+  - soyuz.toml
+  - main.sy
+</FileTree>
+
+**Projeto biblioteca** — gera:
+
+<FileTree>
+- mylib/
+  - soyuz.toml
+  - lib.sy
+</FileTree>
+
+### soyuz.toml gerado
+
+```toml
+[project]
+name    = "hello"
+version = "0.1.0"
+type    = "binary"   # ou "library"
+entry   = "main.sy"
+
+[packages]
+# aliases para imports locais (ver Módulos)
+```
+
+---
+
+## soyuz build
+
+Compila o projeto ou um arquivo avulso.
+
+### Modo projeto (sem argumento)
+
+Execute dentro de um diretório que contenha `soyuz.toml`:
+
+```sh
+soyuz build            # debug  → target/debug/<name>
+soyuz build --release  # release → target/release/<name>
+```
+
+O output segue a estrutura:
+
+<FileTree>
+- hello/
+  - target/
+    - debug/
+      - hello
+    - release/
+      - hello
+</FileTree>
+
+Para projetos do tipo `library`, `soyuz build` executa apenas a verificação de tipos — nenhum executável é gerado:
+
+```
+Biblioteca 'mylib' v0.1.0 verificada com sucesso.
+```
+
+### Modo arquivo (legado)
+
+```sh
+soyuz build [-o saída] <arquivo.sy>
+```
+
+```sh
+soyuz build main.sy             # output: ./output
+soyuz build -o meu_app main.sy  # output: ./meu_app
+```
+
+### Flag `--release`
+
+Ativa `-O2` no Clang. Útil para distribuição; desnecessário durante o desenvolvimento.
+
+---
+
+## soyuz run
+
+Compila para um diretório temporário, executa o binário e apaga em seguida.
+
+```sh
+soyuz run                        # usa entry do soyuz.toml
+soyuz run <arquivo.sy>           # compila e executa um arquivo avulso
+soyuz run --release              # build otimizado antes de executar
+soyuz run <arquivo.sy> -- arg1 arg2  # passa argumentos ao programa
+```
+
+<Aside type="note">
+O separador `--` delimita os argumentos do `soyuz run` dos argumentos que serão passados ao programa compilado. Tudo após `--` chega em `args()` dentro do programa.
+</Aside>
+
+### Exemplo
+
+```sh
+# Criar projeto, rodar e verificar argumentos
+soyuz new demo && cd demo
+soyuz run -- alpha beta
+```
+
+```soyuz
+// main.sy
+import @soyuz/prelude
+
+fn main() {
+    val a = args()
+    print("recebeu $(a.size()) argumentos")
+}
+```
+
+---
+
+## soyuz.toml — referência completa
+
+```toml
+[project]
+name    = "minha-app"   # nome do projeto e do binário gerado
+version = "0.1.0"       # semver livre — apenas documentação por enquanto
+type    = "binary"      # "binary" | "library"
+entry   = "main.sy"     # arquivo de entrada (relativo à raiz do projeto)
+
+[packages]
+# Define aliases para o sistema de imports.
+# utils = "lib/utils"  →  import { ... } from @utils/modulo
+utils = "lib/utils"
+http  = "lib/http"
+```
+
+### Aliases de packages
+
+Com `[packages]` definido, você usa `@<alias>/<modulo>` nos imports:
+
+```soyuz
+import (
+    { soma } from @utils/math
+    { GET }  from @http/client
+)
+```
+
+### Descoberta do projeto
+
+O compilador busca o `soyuz.toml` subindo pelos diretórios a partir do arquivo de entrada — o mesmo comportamento de ferramentas como `cargo` ou `go`. Você pode rodar `soyuz build` de qualquer subdiretório do projeto.
+
+---
+
+## FFI — arquivos C no projeto
+
+Coloque arquivos `.c` em um diretório `runtime/` na raiz do projeto. Eles são automaticamente compilados e linkados com o programa:
+
+<FileTree>
+- minha-app/
+  - soyuz.toml
+  - main.sy
+  - runtime/
+    - bindings.c
+</FileTree>
+
+O header `soyuz.h` (com a API de RC, listas e mapas) fica disponível via `-I` automaticamente.
+
+---
+
+## Language Server (LSP)
+
+O binário `soyuz-lsp` é publicado junto com `soyuz` em cada release. Configure seu editor para apontar para ele:
+
+<Tabs>
+<TabItem label="Neovim (nvim-lspconfig)">
+```lua
+require('lspconfig').soyuz.setup {
+  cmd = { 'soyuz-lsp' },
+  filetypes = { 'soyuz' },
+  root_dir = require('lspconfig.util').root_pattern('soyuz.toml'),
+}
+```
+</TabItem>
+<TabItem label="VS Code">
+Instale a extensão Soyuz Language Support ou configure manualmente em `.vscode/settings.json`:
+
+```json
+{
+  "soyuz.languageServerPath": "/usr/local/bin/soyuz-lsp"
+}
+```
+</TabItem>
+</Tabs>
+
+O LSP oferece: diagnósticos em tempo real, hover com tipos, completions, inlay hints e formatação de código.

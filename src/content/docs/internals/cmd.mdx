@@ -15,11 +15,22 @@ Cada subdiretório em `cmd/` representa um binário independente ou uma funciona
 ## Arquivos do Módulo
 
 ### `cmd/main.go`
-**O que faz:** Implementa o comando principal `soyuz build`. Ele orquestra todas as fases: extração do runtime/stdlib, resolução de módulos, parse, check, codegen e a invocação final do `clang`.
-**Como é usado:** Através do comando `soyuz build -o meu_app main.sy`. Ele cria diretórios temporários para trabalhar e limpa tudo ao finalizar.
+**O que faz:** Implementa os comandos `soyuz new`, `soyuz build` e `soyuz run`. Orquestra todas as fases: extração do runtime/stdlib, resolução de módulos, parse, check, codegen e a invocação final do `clang`.
+
+**Comandos:**
+- `soyuz new [--lib] <nome>` — cria scaffold de projeto (binary ou library)
+- `soyuz build [--release] [arquivo.sy]` — sem argumento lê `soyuz.toml` e gera em `target/debug/` ou `target/release/`; com argumento compila o arquivo diretamente
+- `soyuz run [--release] [arquivo.sy] [-- args...]` — compila para temp dir, executa, apaga
+
 **Principais Assinaturas:**
 - `func main()`
-- `func build(inputFile, outputFile string)`
+- `func cmdNew(args []string)`
+- `func cmdBuild(args []string)`
+- `func cmdRun(args []string)`
+- `func buildInternal(inputFile, outputFile string, release bool, projectRoot string) error`
+- `func typeCheckOnly(inputFile string) error` — usado por projetos `type = "library"`
+- `func extractStdlib(tmpDir string) (string, error)`
+- `func parseFiles(files []string, resolver *module.Resolver) ([]parser.Node, map[parser.Node]string, error)`
 
 ### `cmd/lsp/main.go`
 **O que faz:** Inicia o servidor de linguagem (Language Server Protocol).

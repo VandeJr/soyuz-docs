@@ -115,9 +115,14 @@ shared/tipos.sy   ←  produto/model.sy
 O arquivo `soyuz.toml` na raiz define o projeto:
 
 ```toml
-[projeto]
-nome = "minha-app"
-versao = "0.1.0"
+[project]
+name    = "minha-app"
+version = "0.1.0"
+type    = "binary"   # ou "library"
+entry   = "main.sy"
+
+[packages]
+utils = "lib/utils"  # @utils/... aponta para lib/utils/
 ```
 
 ---
